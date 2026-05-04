@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  edgeone-calculator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: edgeone-pricing-calculator:latest
+    container_name: edgeone-pricing-calculator
+    ports:
+      # Host port : container port. Nginx runs on 8080 inside the container
+      # (non-privileged), and we expose it publicly on 80 on the host.
+      - "80:8080"
+    environment:
+      - NODE_ENV=production
+      # AI Assistant upstream auth. Leave ANTHROPIC_API_KEY empty to disable
+      # the feature gracefully — the frontend surfaces a clear error message
+      # to users and nginx fails fast with a 503 instead of forwarding bad
+      # requests upstream.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+    # read_only has been relaxed because the entrypoint needs to render
+    # /etc/nginx/nginx.conf from a template at startup. Everything else
+    # that writes (logs, cache, pid) still goes to the tmpfs mounts below.
+    read_only: false
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
