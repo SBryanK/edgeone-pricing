@@ -1,4 +1,11 @@
-import type { Region, RegionInfo, RegionalPricing, PlanInfo, ServiceItem } from '../types';
+import type { Region, RegionInfo, RegionalPricing, PlanInfo, ServiceItem, TierMode } from '../types';
+
+// Date the price list below was last reviewed against the official docs.
+// Per-item verification status and source links live in ./sources.ts.
+export const PRICING_AS_OF = '2026-09-23';
+
+// Value-added service usage unit (VAU) list price, USD.
+export const VAU_PRICE_USD = 0.0143;
 
 // Region definitions
 export const REGIONS: RegionInfo[] = [
@@ -358,82 +365,82 @@ export const L7_BANDWIDTH_PRICING: RegionalPricing[] = [
   {
     region: 'chinese_mainland',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 2.7429 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 2.6714 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 2.5000 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 2.4571 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 2.7429 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 2.6714 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 2.5000 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 2.4571 },
     ],
   },
   {
     region: 'north_america',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 7.3000 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 6.9429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 5.3000 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 3.7571 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 7.3000 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 6.9429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 5.3000 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 3.7571 },
     ],
   },
   {
     region: 'europe',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 7.3000 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 6.9429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 5.3000 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 3.7571 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 7.3000 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 6.9429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 5.3000 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 3.7571 },
     ],
   },
   {
     region: 'asia_pacific_1',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 12.8571 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 11.3143 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 9.5143 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 8.5857 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 12.8571 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 11.3143 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 9.5143 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 8.5857 },
     ],
   },
   {
     region: 'asia_pacific_2',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 13.8857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 12.0857 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 9.7714 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 9.0000 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 13.8857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 12.0857 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 9.7714 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 9.0000 },
     ],
   },
   {
     region: 'asia_pacific_3',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 17.5857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 15.6286 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 12.9571 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 11.7286 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 17.5857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 15.6286 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 12.9571 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 11.7286 },
     ],
   },
   {
     region: 'middle_east',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 24.8429 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 22.7857 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 20.5714 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 18.0000 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 24.8429 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 22.7857 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 20.5714 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 18.0000 },
     ],
   },
   {
     region: 'africa',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 18.8714 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 17.3286 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 15.9429 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 14.5571 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 18.8714 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 17.3286 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 15.9429 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 14.5571 },
     ],
   },
   {
     region: 'south_america',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 18.8714 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 17.3286 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 15.9429 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 14.5571 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 18.8714 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 17.3286 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 15.9429 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 14.5571 },
     ],
   },
 ];
@@ -443,82 +450,82 @@ export const L4_BANDWIDTH_PRICING: RegionalPricing[] = [
   {
     region: 'chinese_mainland',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 19.8857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 18.6857 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 15.7143 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 14.9143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 19.8857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 18.6857 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 15.7143 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 14.9143 },
     ],
   },
   {
     region: 'north_america',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 29.0857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 27.3429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 22.9857 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 21.8143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 29.0857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 27.3429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 22.9857 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 21.8143 },
     ],
   },
   {
     region: 'europe',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 29.0857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 27.3429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 22.9857 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 21.8143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 29.0857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 27.3429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 22.9857 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 21.8143 },
     ],
   },
   {
     region: 'asia_pacific_1',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 25.6143 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 24.0714 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 20.2286 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 19.2143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 25.6143 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 24.0714 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 20.2286 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 19.2143 },
     ],
   },
   {
     region: 'asia_pacific_2',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 62.2857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 58.5571 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 49.2143 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 46.7143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 62.2857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 58.5571 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 49.2143 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 46.7143 },
     ],
   },
   {
     region: 'asia_pacific_3',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 78.9000 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 74.1714 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 62.3286 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 59.1714 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 78.9000 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 74.1714 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 62.3286 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 59.1714 },
     ],
   },
   {
     region: 'middle_east',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 86.6429 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 81.4429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 68.4429 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 64.9714 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 86.6429 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 81.4429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 68.4429 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 64.9714 },
     ],
   },
   {
     region: 'africa',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 86.6429 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 81.4429 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 68.4429 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 64.9714 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 86.6429 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 81.4429 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 68.4429 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 64.9714 },
     ],
   },
   {
     region: 'south_america',
     tiers: [
-      { tier: '0-2TB', minGB: 0, maxGB: 500, pricePerGB: 112.6857 },
-      { tier: '2-10TB', minGB: 500, maxGB: 5000, pricePerGB: 105.9286 },
-      { tier: '10-50TB', minGB: 5000, maxGB: 50000, pricePerGB: 89.0143 },
-      { tier: '50-100TB', minGB: 50000, maxGB: Infinity, pricePerGB: 84.5143 },
+      { tier: '0-500Mbps', minGB: 0, maxGB: 500, pricePerGB: 112.6857 },
+      { tier: '500-5,000Mbps', minGB: 500, maxGB: 5000, pricePerGB: 105.9286 },
+      { tier: '5,000-50,000Mbps', minGB: 5000, maxGB: 50000, pricePerGB: 89.0143 },
+      { tier: '50,000Mbps+', minGB: 50000, maxGB: Infinity, pricePerGB: 84.5143 },
     ],
   },
 ];
@@ -609,8 +616,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '개인용 요금제',
     nameJp: '個人向けプラン',
     nameId: 'Paket Personal',
-    description: 'For personal websites and blogs. 50GB Traffic, 3M Requests.',
-    descriptionId: 'Untuk situs pribadi dan blog. 50GB trafik, 3 juta request.',
+    description: 'For personal sites. Includes 50 GB traffic and 3M requests / month; enter only usage beyond the quota. Promotional prices may apply on edgeone.ai.',
+    descriptionId: 'Untuk situs pribadi. Termasuk 50 GB trafik dan 3 juta request / bulan; isi hanya pemakaian di atas kuota. Harga promo mungkin berlaku di edgeone.ai.',
     unit: '/month',
     unitZh: '/月',
     unitKr: '/월',
@@ -627,8 +634,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '베이직 요금제',
     nameJp: 'ベーシックプラン',
     nameId: 'Paket Dasar',
-    description: 'For SMBs. 500GB Traffic, 20M Requests.',
-    descriptionId: 'Untuk UKM. 500GB trafik, 20 juta request.',
+    description: 'For SMBs. Includes 500 GB traffic and 20M requests / month; enter only usage beyond the quota. Promotional prices may apply on edgeone.ai.',
+    descriptionId: 'Untuk UKM. Termasuk 500 GB trafik dan 20 juta request / bulan; isi hanya pemakaian di atas kuota. Harga promo mungkin berlaku di edgeone.ai.',
     unit: '/month',
     unitZh: '/月',
     unitKr: '/월',
@@ -645,8 +652,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '스탠다드 요금제',
     nameJp: 'スタンダードプラン',
     nameId: 'Paket Standar',
-    description: 'For growing businesses. 3TB Traffic, 50M Requests.',
-    descriptionId: 'Untuk bisnis yang berkembang. 3TB trafik, 50 juta request.',
+    description: 'For growing businesses. Includes 3 TB traffic and 50M requests / month; enter only usage beyond the quota. Promotional prices may apply on edgeone.ai.',
+    descriptionId: 'Untuk bisnis berkembang. Termasuk 3 TB trafik dan 50 juta request / bulan; isi hanya pemakaian di atas kuota. Harga promo mungkin berlaku di edgeone.ai.',
     unit: '/month',
     unitZh: '/月',
     unitKr: '/월',
@@ -663,8 +670,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '엔터프라이즈 요금제 (후불)',
     nameJp: 'エンタープライズプラン（後払い）',
     nameId: 'Paket Enterprise (Pascabayar)',
-    description: 'Monthly subscription for enterprise features',
-    descriptionId: 'Langganan bulanan untuk fitur enterprise',
+    description: 'Enterprise plan, postpaid monthly. Traffic is billed at the attained tier. Enterprise pricing is not published; confirm the fee with sales.',
+    descriptionId: 'Paket Enterprise, pascabayar bulanan. Trafik ditagih dengan harga tier yang dicapai. Harga Enterprise tidak dipublikasikan; konfirmasi ke sales.',
     unit: '/month',
     unitZh: '/月',
     unitKr: '/월',
@@ -682,8 +689,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '엔터프라이즈 요금제 (선불)',
     nameJp: 'エンタープライズプラン（前払い）',
     nameId: 'Paket Enterprise (Prabayar)',
-    description: 'Annual prepaid enterprise subscription',
-    descriptionId: 'Langganan enterprise prabayar tahunan',
+    description: 'Enterprise plan, prepaid monthly. Traffic is billed with progressive tiers. Enterprise pricing is not published; confirm the fee with sales.',
+    descriptionId: 'Paket Enterprise, prabayar bulanan. Trafik ditagih dengan tier progresif. Harga Enterprise tidak dipublikasikan; konfirmasi ke sales.',
     unit: '/month',
     unitZh: '/月',
     unitKr: '/월',
@@ -788,10 +795,9 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     basePrice: 0.0071,
     isMonthly: true,
   },
-  // Value-Added Services (VAU)
-  // Per Tencent Cloud EdgeOne pricing: 1 VAU = $0.0143 (= ¥0.1).
-  // Sites / rules are priced as bundles of VAU (100 VAU/site, 100 VAU/rule,
-  // 140,000 VAU/L4 instance) which yield the flat per-unit prices below.
+  // Value-Added Services (VAU) — https://www.tencentcloud.com/document/product/1145/55645
+  // 1 VAU = $0.0143. Usage-based services convert to VAU per million requests;
+  // quota-based services (sites, rules) convert to VAU per unit per month.
   {
     id: 'quic_requests',
     category: 'vau',
@@ -800,14 +806,14 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: 'QUIC 요청 수',
     nameJp: 'QUIC リクエスト数',
     nameId: 'Request QUIC',
-    description: 'HTTP/3 QUIC protocol requests. $0.71 per million requests / month.',
-    descriptionId: 'Request protokol QUIC HTTP/3. $0.71 per juta request / bulan.',
+    description: 'HTTP/3 QUIC requests. 100 VAU per million requests with the default 50% QUIC discount ($0.00715 / VAU) = $0.715 per million.',
+    descriptionId: 'Request QUIC HTTP/3. 100 VAU per juta request dengan diskon QUIC bawaan 50% ($0.00715 / VAU) = $0.715 per juta.',
     unit: '/million requests',
     unitZh: '/百万次请求',
     unitKr: '/100만 요청',
     unitJp: '/100万リクエスト',
     unitId: '/juta request',
-    basePrice: 0.71,
+    basePrice: VAU_PRICE_USD * 100 * 0.5,
     isMonthly: true,
   },
   {
@@ -818,32 +824,34 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '스마트 가속 요청 수',
     nameJp: 'スマートアクセラレーションリクエスト数',
     nameId: 'Request Akselerasi Cerdas',
-    description: 'AI-powered acceleration requests. $2.13 per million requests / month.',
-    descriptionId: 'Request akselerasi berbasis AI. $2.13 per juta request / bulan.',
+    description: 'Smart Acceleration requests. 100 VAU per million requests × $0.0143 = $1.43 per million.',
+    descriptionId: 'Request Smart Acceleration. 100 VAU per juta request × $0.0143 = $1.43 per juta.',
     unit: '/million requests',
     unitZh: '/百万次请求',
     unitKr: '/100만 요청',
     unitJp: '/100万リクエスト',
     unitId: '/juta request',
-    basePrice: 2.13,
+    basePrice: VAU_PRICE_USD * 100,
     isMonthly: true,
   },
   {
-    id: 'bot_protection',
+    // Replaces the former `bot_protection` item (quantity in raw VAU); saved
+    // drafts are migrated in useCalculator (VAU / 100 = million requests).
+    id: 'bot_requests',
     category: 'vau',
-    name: 'BOT Management (VAU)',
-    nameZh: 'Bot管理（增值单元）',
-    nameKr: '봇 관리 (VAU)',
-    nameJp: 'Bot管理（VAU）',
-    nameId: 'Manajemen BOT (VAU)',
-    description: 'BOT management enablement. Billed in VAU ($0.0143 / VAU).',
-    descriptionId: 'Pengaktifan manajemen BOT. Ditagih per VAU ($0.0143 / VAU).',
-    unit: '/VAU',
-    unitZh: '/增值单元',
-    unitKr: '/VAU',
-    unitJp: '/VAU',
-    unitId: '/VAU',
-    basePrice: 0.0143,
+    name: 'BOT Management Requests',
+    nameZh: 'Bot管理请求数',
+    nameKr: '봇 관리 요청 수',
+    nameJp: 'Bot管理リクエスト数',
+    nameId: 'Request Manajemen BOT',
+    description: 'Requests inspected by BOT management. 100 VAU per million requests × $0.0143 = $1.43 per million.',
+    descriptionId: 'Request yang diperiksa manajemen BOT. 100 VAU per juta request × $0.0143 = $1.43 per juta.',
+    unit: '/million requests',
+    unitZh: '/百万次请求',
+    unitKr: '/100만 요청',
+    unitJp: '/100万リクエスト',
+    unitId: '/juta request',
+    basePrice: VAU_PRICE_USD * 100,
     isMonthly: true,
   },
   {
@@ -854,7 +862,7 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '사이트 할당량 확장',
     nameJp: 'サイトクォータ拡張',
     nameId: 'Penambahan Kuota Situs',
-    description: 'Additional connected sites. 100 VAU/site = $1.43 / site / month.',
+    description: 'Additional site quota. 100 VAU per site per month × $0.0143 = $1.43 / site / month (prorated by days used).',
     descriptionId: 'Tambahan situs terhubung. 100 VAU/situs = $1.43 / situs / bulan.',
     unit: '/site/month',
     unitZh: '/站点/月',
@@ -872,7 +880,7 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '웹 사용자 정의/속도 제한 규칙 할당량',
     nameJp: 'Webカスタム/レート制限ルールのクォータ',
     nameId: 'Kuota Aturan Web Kustom/Batas Kecepatan',
-    description: 'Additional rule quotas. 100 VAU/rule = $1.43 / rule / month.',
+    description: 'Additional rate-limiting / custom rule quota. 100 VAU per rule per month × $0.0143 = $1.43 / rule / month.',
     descriptionId: 'Tambahan kuota aturan. 100 VAU/aturan = $1.43 / aturan / bulan.',
     unit: '/rule/month',
     unitZh: '/规则/月',
@@ -1001,8 +1009,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '글로벌/해외 프록시 (시간당)',
     nameJp: 'グローバル/海外プロキシ（時間単位）',
     nameId: 'Proxy Global/Luar Negeri (Per Jam)',
-    description: 'Pay-as-you-go global domains / overseas proxy. $0.05 / resource / hour.',
-    descriptionId: 'Domain global / proxy luar negeri bayar-per-pakai. $0.05 / sumber daya / jam.',
+    description: 'Protected resources beyond the prepaid quota (EO domains / global L4 proxy). $0.05 / resource / hour for the 0–100 resource tier; higher tiers not modelled.',
+    descriptionId: 'Sumber daya terlindungi di luar kuota prabayar (domain EO / proxy L4 global). $0.05 / sumber daya / jam untuk tier 0–100 sumber daya; tier lebih tinggi tidak dimodelkan.',
     unit: '/resource/hour',
     unitZh: '/资源/小时',
     unitKr: '/리소스/시간',
@@ -1036,8 +1044,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '중국 네트워크 최적화 - 트래픽',
     nameJp: '中国ネットワーク最適化 - トラフィック',
     nameId: 'Optimisasi Jaringan Tiongkok - Trafik',
-    description: 'Premium routing for Mainland China — traffic. Overage $0.57 / GB.',
-    descriptionId: 'Routing premium untuk Tiongkok Daratan - trafik. Overage $0.57 / GB.',
+    description: 'Cross-MLC-border acceleration for Mainland China users. $0.57 / GB; cannot be offset by plan-included traffic.',
+    descriptionId: 'Akselerasi lintas batas untuk pengguna Tiongkok Daratan. $0.57 / GB; tidak bisa dipotong dari kuota trafik paket.',
     unit: '/GB',
     unitZh: '/GB',
     unitKr: '/GB',
@@ -1195,8 +1203,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '로그 저장소 - 중국 본토',
     nameJp: 'ログストレージ - 中国本土',
     nameId: 'Penyimpanan Log - Tiongkok Daratan',
-    description: 'Log analysis storage in Mainland China zones. $0.11 / GB / month.',
-    descriptionId: 'Penyimpanan log di zona Tiongkok Daratan. $0.11 / GB / bulan.',
+    description: 'Log analysis storage in Mainland China AZs. $0.11 / GB / month, billed on the monthly peak of hourly metered storage.',
+    descriptionId: 'Penyimpanan log di AZ Tiongkok Daratan. $0.11 / GB / bulan, ditagih dari puncak bulanan penyimpanan per jam.',
     unit: '/GB/month',
     unitZh: '/GB/月',
     unitKr: '/GB/월',
@@ -1320,8 +1328,8 @@ export const SERVICE_ITEMS: ServiceItem[] = [
     nameKr: '이미지 처리',
     nameJp: '画像処理',
     nameId: 'Pemrosesan Gambar',
-    description: 'Image optimization and transformation',
-    descriptionId: 'Optimasi dan transformasi gambar',
+    description: 'Image optimization and transformation. Officially free during beta; the $0.10 / 1,000 figure is a placeholder, not a published price.',
+    descriptionId: 'Optimasi dan transformasi gambar. Resminya gratis selama beta; angka $0.10 / 1.000 hanya placeholder, bukan harga resmi.',
     unit: '/thousand images',
     unitZh: '/千张',
     unitKr: '/1천 장',
@@ -1350,7 +1358,7 @@ export const SERVICE_ITEMS: ServiceItem[] = [
 
 // Service categories for UI grouping
 export const SERVICE_CATEGORIES = [
-  { id: 'plans', name: 'Enterprise Plans', nameZh: '企业套餐', nameKr: '엔터프라이즈 요금제', nameJp: 'エンタープライズプラン', nameId: 'Paket Enterprise', icon: 'Building2' },
+  { id: 'plans', name: 'Plans', nameZh: '套餐', nameKr: '요금제', nameJp: 'プラン', nameId: 'Paket', icon: 'Building2' },
   { id: 'traffic', name: 'Traffic Services', nameZh: '流量服务', nameKr: '트래픽 서비스', nameJp: 'トラフィックサービス', nameId: 'Layanan Trafik', icon: 'Activity' },
   { id: 'vau', name: 'Value-Added (VAU)', nameZh: '增值服务', nameKr: '부가 서비스', nameJp: '付加価値サービス', nameId: 'Layanan Nilai Tambah (VAU)', icon: 'Sparkles' },
   { id: 'ddos', name: 'DDoS Protection', nameZh: 'DDoS防护', nameKr: 'DDoS 보호', nameJp: 'DDoS対策', nameId: 'Proteksi DDoS', icon: 'Shield' },
@@ -1368,45 +1376,103 @@ export const DISCOUNT_PRESETS = [
   { label: '30%', value: 30, description: 'Pay 70%' },
 ];
 
-// Helper function to get price for tiered regional pricing
+// Services billed as a single flat bundle (quantity is fixed at 1).
+export const FIXED_QUANTITY_SERVICE_IDS: ReadonlySet<string> = new Set([
+  'plan_personal',
+  'plan_basic',
+  'plan_standard',
+  'enterprise_postpaid',
+  'enterprise_prepaid',
+  'ddos_essential',
+  'ddos_premium',
+  'ddos_china_extension',
+  'advanced_web_protection',
+]);
+
+export function isFixedQuantityService(serviceId: string): boolean {
+  return FIXED_QUANTITY_SERVICE_IDS.has(serviceId);
+}
+
+// Services whose quantity is entered in GB and may be displayed as TB / PB.
+export function isVolumeInGB(service: ServiceItem): boolean {
+  return service.unit === '/GB';
+}
+
+/** Regional tier table backing a tiered service, or undefined for flat-rate services. */
+export function getTierTableForService(serviceId: string): RegionalPricing[] | undefined {
+  switch (serviceId) {
+    case 'l7_traffic':
+      return L7_TRAFFIC_PRICING;
+    case 'l4_traffic':
+      return L4_TRAFFIC_PRICING;
+    case 'l7_bandwidth':
+      return L7_BANDWIDTH_PRICING;
+    case 'l4_bandwidth':
+      return L4_BANDWIDTH_PRICING;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The tier a monthly volume falls into. Boundaries are inclusive of the upper
+ * bound: exactly 2,000 GB is still in "0-2TB".
+ */
+export function getAttainedTier(
+  pricingData: RegionalPricing[],
+  region: Region,
+  quantity: number
+) {
+  const regionalPricing = pricingData.find((p) => p.region === region);
+  if (!regionalPricing || regionalPricing.tiers.length === 0) return undefined;
+  return (
+    regionalPricing.tiers.find((tier) => quantity <= tier.maxGB) ??
+    regionalPricing.tiers[regionalPricing.tiers.length - 1]
+  );
+}
+
+/**
+ * Monthly list price of a tiered volume.
+ *
+ * 'attained' (default) — whole volume × price of the tier reached. This is
+ * how EdgeOne Enterprise postpaid is billed; the official example is 15 TB of
+ * Chinese-mainland L7 traffic = 15 × 1000 × 0.0399 = 598.5 USD.
+ *
+ * 'progressive' — each slice billed at its own tier (Enterprise prepaid and
+ * Personal / Basic / Standard). Hourly settlement does not change the monthly
+ * total because tiers accumulate over the calendar month.
+ */
 export function getTieredPrice(
   pricingData: RegionalPricing[],
   region: Region,
-  quantityGB: number
+  quantity: number,
+  mode: TierMode = 'attained'
 ): number {
+  if (!(quantity > 0)) return 0;
   const regionalPricing = pricingData.find((p) => p.region === region);
   if (!regionalPricing) return 0;
 
-  let totalPrice = 0;
-  let remainingGB = quantityGB;
-
-  for (const tier of regionalPricing.tiers) {
-    if (remainingGB <= 0) break;
-
-    const tierCapacity = tier.maxGB - tier.minGB;
-    const gbInThisTier = Math.min(remainingGB, tierCapacity);
-
-    totalPrice += gbInThisTier * tier.pricePerGB;
-    remainingGB -= gbInThisTier;
+  if (mode === 'attained') {
+    const tier = getAttainedTier(pricingData, region, quantity);
+    return tier ? quantity * tier.pricePerGB : 0;
   }
 
+  let totalPrice = 0;
+  let remaining = quantity;
+  for (const tier of regionalPricing.tiers) {
+    if (remaining <= 0) break;
+    const inThisTier = Math.min(remaining, tier.maxGB - tier.minGB);
+    totalPrice += inThisTier * tier.pricePerGB;
+    remaining -= inThisTier;
+  }
   return totalPrice;
 }
 
-// Helper function to get the applicable tier price for display
+// Unit price of the tier the volume reaches (the marginal rate).
 export function getDisplayTierPrice(
   pricingData: RegionalPricing[],
   region: Region,
-  quantityGB: number
+  quantity: number
 ): number {
-  const regionalPricing = pricingData.find((p) => p.region === region);
-  if (!regionalPricing) return 0;
-
-  for (const tier of regionalPricing.tiers) {
-    if (quantityGB <= tier.maxGB) {
-      return tier.pricePerGB;
-    }
-  }
-
-  return regionalPricing.tiers[regionalPricing.tiers.length - 1].pricePerGB;
+  return getAttainedTier(pricingData, region, quantity)?.pricePerGB ?? 0;
 }

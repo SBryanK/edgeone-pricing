@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { ChevronDown, X, Merge, Percent } from 'lucide-react';
-import type { CalculatorInput, CalculatedItem } from '../types';
+import type { CalculatorInput, CalculatedItem, TierMode } from '../types';
 import type { Draft } from '../hooks/useCalculator';
-import { formatCurrency } from '../utils/calculator';
-import { SERVICE_ITEMS } from '../data/pricing';
+import { displayMultiplier, formatCurrency, tierModeLabel } from '../utils/calculator';
+import { isFixedQuantityService } from '../data/pricing';
+import { NumberInput } from './NumberInput';
 
 interface CompareEstimatePaneProps {
   draft: Draft;
   calculatedItems: CalculatedItem[];
   totals: { monthly: number; annual: number };
+  tierMode: TierMode;
   language: 'en' | 'zh' | 'kr' | 'jp' | 'id';
   paneIndex: number;
   allDrafts: Draft[];
@@ -22,85 +24,6 @@ interface CompareEstimatePaneProps {
   onSetGlobalDiscount: (draftId: string, discount: number) => void;
   canRemove: boolean;
   otherPaneIndices: number[];
-}
-
-const UNIT_MULTIPLIERS: Record<string, number> = {
-  'GB': 1,
-  'TB': 1000,
-  'PB': 1000000,
-};
-
-
-function NumberInput({ 
-  value, 
-  onChange, 
-  className, 
-  min = 0, 
-  max,
-  placeholder,
-  disabled
-}: { 
-  value: number; 
-  onChange: (val: number) => void; 
-  className?: string; 
-  min?: number; 
-  max?: number;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const [strVal, setStrVal] = useState(value.toString());
-
-  useEffect(() => {
-    setStrVal(value.toString());
-  }, [value]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVal = e.target.value;
-    
-    // Prevent invalid characters
-    if (!/^\d*\.?\d*$/.test(newVal)) return;
-
-    setStrVal(newVal); 
-    
-    if (newVal === '') {
-      onChange(0); 
-      return; 
-    }
-
-    let num = parseFloat(newVal);
-    
-    // Strict limits logic
-    if (isNaN(num)) return;
-    if (max !== undefined && num > max) num = max;
-    if (min !== undefined && num < min) num = min; 
-
-    onChange(num);
-  };
-
-  const handleBlur = () => {
-    if (strVal === '' || isNaN(parseFloat(strVal))) {
-      setStrVal(min.toString());
-      onChange(min);
-    } else {
-      const num = parseFloat(strVal);
-      // Remove leading zeros or format
-      setStrVal(num.toString());
-      onChange(num);
-    }
-  };
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={strVal}
-      onChange={handleChange}
-      onBlur={handleBlur}
-      className={`${className} ${disabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
-  );
 }
 
 // Draggable Item for Compare View
@@ -139,12 +62,11 @@ function DraggableCompareItem({
   } : undefined;
 
   const displayUnit = inputItem.displayUnit;
-  const displayMultiplier = displayUnit ? (UNIT_MULTIPLIERS[displayUnit] || 1) : 1;
-  const displayQuantity = inputItem.quantity / displayMultiplier;
+  const mult = displayMultiplier(displayUnit);
+  const displayQuantity = inputItem.quantity / mult;
   const hasDiscount = item.discount > 0;
   
-  const service = SERVICE_ITEMS.find(s => s.id === item.serviceId);
-  const isFixedQuantity = service?.category === 'plans' || service?.category === 'ddos';
+  const isFixedQuantity = isFixedQuantityService(item.serviceId);
 
   return (
     <div
@@ -184,7 +106,9 @@ function DraggableCompareItem({
         </div>
 
         {/* Remove Item Button */}
-        <button 
+        <button
+          type="button"
+          aria-label="Remove item"
           onClick={() => onRemoveItem(draftId, index)}
           className="absolute top-0 right-[-4px] -mt-1 text-gray-300 hover:text-red-500 transition-colors p-1 pointer-events-auto"
         >
@@ -201,7 +125,7 @@ function DraggableCompareItem({
             <div className="flex items-center bg-gray-50 rounded p-0.5 border border-gray-100 shrink-0 min-w-0 max-w-full">
               <NumberInput
                 value={displayQuantity}
-                onChange={(val) => onUpdateItem(draftId, index, { quantity: val * displayMultiplier })}
+                onChange={(val) => onUpdateItem(draftId, index, { quantity: val * mult })}
                 min={0}
                 className="w-8 sm:w-12 text-[10px] font-bold text-gray-900 bg-transparent text-center focus:outline-none min-w-0"
               />
@@ -246,6 +170,7 @@ export function CompareEstimatePane({
   draft,
   calculatedItems,
   totals,
+  tierMode,
   language,
   paneIndex,
   allDrafts,
@@ -359,6 +284,8 @@ export function CompareEstimatePane({
             {/* Remove Pane Button */}
             {canRemove && (
               <button
+                type="button"
+                aria-label="Close pane"
                 onClick={() => onRemovePane(paneIndex)}
                 className="p-1 sm:p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
               >
@@ -370,7 +297,9 @@ export function CompareEstimatePane({
 
         {/* Stats & Global Discount */}
         <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-gray-500 gap-1 min-w-0">
-          <span className="font-semibold shrink-0 truncate max-w-[40%]">{calculatedItems.length} {t.items}</span>
+          <span className="font-semibold shrink-0 truncate max-w-[40%]" title={tierModeLabel(tierMode)}>
+            {calculatedItems.length} {t.items} · {tierModeLabel(tierMode)}
+          </span>
           
           <div className="flex items-center space-x-1 bg-white border border-gray-200 rounded px-1 sm:px-1.5 py-0.5 max-w-[55%] shrink-0 min-w-0">
              <Percent className="w-2.5 h-2.5 text-gray-400 shrink-0" />

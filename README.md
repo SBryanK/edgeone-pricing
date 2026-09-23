@@ -1,8 +1,8 @@
 # EdgeOne Pricing Calculator
 
 A pricing estimation tool for **Tencent Cloud EdgeOne** with a service catalog,
-draft-based scenarios, tiered regional pricing, side-by-side comparison, and an
-optional AI assistant for natural-language quote generation.
+draft-based scenarios, tiered regional pricing, side-by-side comparison and
+Excel / CSV / JSON quote export. It runs as a fully static site (GitHub Pages).
 
 > **Status:** internal reference tool. Prices are derived from public
 > documentation and may not reflect negotiated enterprise discounts or
@@ -21,19 +21,33 @@ optional AI assistant for natural-language quote generation.
   them. Persisted in `localStorage`.
 - **Compare mode** — view 2–3 drafts side by side, move items between them,
   merge a draft into another.
-- **Tiered regional pricing** — L7 / L4 traffic uses per-region tiered pricing
-  across 9 regions.
+- **Tiered regional pricing** — L7 / L4 traffic and bandwidth use per-region
+  tiers across 9 regions, rated the way EdgeOne bills them:
+  - *Attained tier* (Enterprise postpaid): the whole month at the tier reached —
+    15 TB in the Chinese mainland = 15 × 1000 × $0.0399 = $598.50.
+  - *Progressive* (Enterprise prepaid, Personal / Basic / Standard): each slice
+    at its own tier — the same 15 TB = $625.70.
+  - Per draft: *Auto* (follows the plan in the draft) or an explicit choice.
+- **Price provenance** — every catalogue item carries an *Official* or
+  *Reference* badge linking to its source (see [Pricing data](#pricing-data)).
 - **Discounts** — global discount per draft, or per-item discount mode.
 - **Regional details** — region breakdown modal for each traffic service.
 - **i18n** — English, 中文, 한국어, 日本語, Bahasa Indonesia.
-- **Exports** — CSV (UTF-8 BOM so Excel opens CJK correctly), JSON, Excel.
-- **Password-gated entry** — simple client-side gate via `VITE_APP_PASSWORD`
-  (not a real auth boundary; put behind SSO for anything sensitive).
+- **Search** across all catalogue items, live cost preview on each card.
+- **Exports** — Excel (styled, live formulas, one sheet per draft + comparison
+  summary; ExcelJS is lazy-loaded), CSV (UTF-8 BOM so Excel opens CJK
+  correctly), JSON. Unit prices are blended (list price ÷ usage) so
+  `usage × unit price` always equals the line total.
+- **Optional password gate** — enabled only when `VITE_APP_PASSWORD` is set at
+  build time (baked into the public bundle; not a real auth boundary).
 
-### AI Assistant
-Natural-language recommendations. The widget is always visible; if the server
-is not configured with an API key, users see a clear error when they submit a
-prompt, and the rest of the app is unaffected.
+### AI Assistant (disabled in the static build)
+The AI assistant needs a server-side proxy for `/api/ai/chat`, which a static
+host such as GitHub Pages cannot provide, so it is commented out in
+`src/App.tsx`. The code (`src/components/AiAssistant.tsx`, `src/services/ai.ts`,
+`api/ai/chat.ts`, `nginx.conf`) is kept; to re-enable it on Vercel or Docker,
+uncomment the `AiAssistant` import, the `handleAiAddItems` block and the
+`<AiAssistant />` element in `App.tsx`.
 
 **How it works.** The browser posts a Messages-API-shaped body to the
 same-origin path `/api/ai/chat`. A server-side proxy (nginx in the Docker
@@ -75,9 +89,48 @@ npm run dev             # → http://localhost:5174
 
 ---
 
+## Pricing data
+
+- Price tables: [`src/data/pricing.ts`](./src/data/pricing.ts)
+  (`PRICING_AS_OF` = date of the last review).
+- Provenance: [`src/data/sources.ts`](./src/data/sources.ts) — per item,
+  `verified` (the figure or rule is stated in the linked official Tencent
+  Cloud page) or `reference` (carried over from the previous internal sheet and
+  **not** re-confirmed; confirm before quoting).
+- Verified in the 2026-09-23 review: tier rating rules (attained vs
+  progressive), Chinese-mainland L7 tiers and L4 10–50 TB rate (from the
+  official worked examples), Personal $4.2 / Basic $57 plan prices, plan
+  quotas, VAU = $0.0143 with 100 VAU per million Smart Acceleration / BOT /
+  QUIC (50% off) requests and 100 VAU per extra site / rule, Edge Functions,
+  Cross-MLC-border $0.57/GB, Chinese-mainland log storage $0.11/GB, DDoS
+  protected resources $0.05/resource-hour (0–100 tier).
+- Corrected in that review: Smart Acceleration ($2.13 → $1.43 per million),
+  QUIC ($0.71 → $0.715), BOT now priced per million requests (saved drafts are
+  migrated automatically), and tiered traffic no longer always uses
+  progressive rating.
+- Unit tests pin the official worked examples
+  ([`src/utils/calculator.test.ts`](./src/utils/calculator.test.ts)).
+
+---
+
 ## Deployment
 
-Three supported paths, pick whichever matches your infra.
+### GitHub Pages (static, default)
+
+[`.github/workflows/static.yml`](./.github/workflows/static.yml) lints, tests
+and builds on every push / PR, and deploys `dist/` to GitHub Pages on pushes to
+`main`.
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions** (once).
+2. Optional: add a repository secret `VITE_APP_PASSWORD` to turn on the login
+   gate. Without it the site opens directly.
+3. Push / merge to `main`. The site is published at
+   `https://<owner>.github.io/<repo>/`.
+
+The Vite `base` is `./`, so the same build works under a sub-path (Pages) and
+at a domain root (Vercel, Docker).
+
+The paths below keep the AI proxy available if you re-enable the assistant.
 
 ### A. Vercel (recommended for public hosting)
 
@@ -142,7 +195,7 @@ injected server-side.
 
 | Name                 | Scope        | Used by                               | Notes                                                                    |
 |----------------------|--------------|---------------------------------------|--------------------------------------------------------------------------|
-| `VITE_APP_PASSWORD`  | build-time   | client bundle (login gate)            | Baked into the static build. Required at build time.                     |
+| `VITE_APP_PASSWORD`  | build-time   | client bundle (login gate)            | Optional. Baked into the static build; gate is off when unset.           |
 | `ANTHROPIC_API_KEY`  | runtime      | nginx / serverless / dev node proxy   | Never reaches the browser. If empty, AI assistant returns a 503.         |
 
 See [`.env.example`](./.env.example) for a template.
@@ -159,6 +212,7 @@ See [`.env.example`](./.env.example) for a template.
 ├── src/
 │   ├── components/           # UI building blocks (catalog, estimate, AI, …)
 │   ├── data/pricing.ts       # Service catalog + per-region price tables
+│   ├── data/sources.ts       # Per-item verification status + official links
 │   ├── hooks/useCalculator.ts
 │   ├── services/ai.ts        # Browser-side AI client (talks to /api/ai/chat)
 │   ├── types/                # Shared TS types (Region, Language, …)

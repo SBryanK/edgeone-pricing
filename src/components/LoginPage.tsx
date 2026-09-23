@@ -1,19 +1,13 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Footer } from './Footer';
+import { assetUrl } from '../utils/assets';
+import { checkPassword } from '../utils/auth';
 
 interface LoginPageProps {
   onLogin: () => void;
   language: 'en' | 'zh' | 'kr' | 'jp' | 'id';
 }
-
-// Password MUST be configured at build/deploy time via VITE_APP_PASSWORD.
-// No default is shipped, so an unconfigured deploy will reject every login
-// attempt — this is intentional: without an explicit password, the only way
-// to get in is to contact the maintainer.
-// NOTE: This is client-side gating only; not a real security boundary. For
-// real auth, put this app behind SSO / an authenticating reverse proxy.
-const PASSWORD: string = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || '';
 
 // Contact details shown on the login page when users don't know the password.
 const CONTACT_HANDLE = 'sbryankusno';
@@ -50,7 +44,7 @@ export function LoginPage({ onLogin, language }: LoginPageProps) {
       en: 'Login',
       zh: '登录',
       kr: '로그인',
-      jp: '로그인',
+      jp: 'ログイン',
       id: 'Masuk',
     }[language],
     contactIntro: {
@@ -94,7 +88,7 @@ export function LoginPage({ onLogin, language }: LoginPageProps) {
     e.preventDefault();
     // Reject empty passwords outright so an unconfigured deploy can't be
     // bypassed by just pressing Enter.
-    if (PASSWORD && password === PASSWORD) {
+    if (checkPassword(password)) {
       onLogin();
     } else {
       setError(true);
@@ -108,7 +102,7 @@ export function LoginPage({ onLogin, language }: LoginPageProps) {
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center mb-4 shadow-sm border border-gray-100">
             <img
-              src="/t.svg"
+              src={assetUrl('t.svg')}
               alt="EdgeOne"
               className="w-12 h-12 object-contain"
             />

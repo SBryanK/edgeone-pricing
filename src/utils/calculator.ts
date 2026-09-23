@@ -1,94 +1,161 @@
-import type { CalculatorInput, CalculatedItem, Language } from '../types';
+import type {
+  BillingMode,
+  CalculatorInput,
+  CalculatedItem,
+  DisplayUnit,
+  Language,
+  ServiceItem,
+  TierMode,
+} from '../types';
 import {
   SERVICE_ITEMS,
   REGIONS,
   SERVICE_CATEGORIES,
-  L7_TRAFFIC_PRICING,
-  L4_TRAFFIC_PRICING,
-  L7_BANDWIDTH_PRICING,
-  L4_BANDWIDTH_PRICING,
+  getAttainedTier,
+  getTierTableForService,
   getTieredPrice,
-  getDisplayTierPrice,
 } from '../data/pricing';
 
-export function calculateItemPrice(input: CalculatorInput, language: Language): CalculatedItem | null {
+export const DISPLAY_UNIT_MULTIPLIERS: Record<DisplayUnit, number> = {
+  GB: 1,
+  TB: 1000,
+  PB: 1_000_000,
+};
+
+export function displayMultiplier(unit?: DisplayUnit): number {
+  return unit ? DISPLAY_UNIT_MULTIPLIERS[unit] ?? 1 : 1;
+}
+
+// Plans that fix how tiered traffic is rated (see getTieredPrice).
+const ATTAINED_PLAN_IDS = new Set(['enterprise_postpaid']);
+const PROGRESSIVE_PLAN_IDS = new Set(['enterprise_prepaid', 'plan_personal', 'plan_basic', 'plan_standard']);
+
+/**
+ * Tier mode for a draft. 'auto' follows the plan in the draft: Enterprise
+ * postpaid → attained; Enterprise prepaid / Personal / Basic / Standard →
+ * progressive. With no plan (or conflicting plans) it falls back to
+ * 'attained', the Enterprise postpaid default this tool quotes most.
+ */
+export function resolveTierMode(items: CalculatorInput[], billingMode: BillingMode = 'auto'): TierMode {
+  if (billingMode !== 'auto') return billingMode;
+  const hasAttained = items.some((i) => ATTAINED_PLAN_IDS.has(i.serviceId));
+  const hasProgressive = items.some((i) => PROGRESSIVE_PLAN_IDS.has(i.serviceId));
+  if (hasProgressive && !hasAttained) return 'progressive';
+  return 'attained';
+}
+
+type LocalizedField = 'name' | 'unit';
+
+function localizeService(service: ServiceItem, field: LocalizedField, language: Language): string {
+  const base = service[field];
+  switch (language) {
+    case 'zh':
+      return service[`${field}Zh`] || base;
+    case 'kr':
+      return service[`${field}Kr`] || base;
+    case 'jp':
+      return service[`${field}Jp`] || base;
+    case 'id':
+      return service[`${field}Id`] || base;
+    default:
+      return base;
+  }
+}
+
+export function getServiceName(service: ServiceItem, language: Language): string {
+  return localizeService(service, 'name', language);
+}
+
+export function getServiceUnit(service: ServiceItem, language: Language): string {
+  return localizeService(service, 'unit', language);
+}
+
+export function getServiceDescription(service: ServiceItem, language: Language): string {
+  return language === 'id' ? service.descriptionId || service.description : service.description;
+}
+
+export function getRegionName(regionId: string, language: Language): string {
+  const r = REGIONS.find((x) => x.id === regionId);
+  if (!r) return regionId;
+  switch (language) {
+    case 'zh':
+      return r.nameZh || r.name;
+    case 'kr':
+      return r.nameKr || r.name;
+    case 'jp':
+      return r.nameJp || r.name;
+    case 'id':
+      return r.nameId || r.name;
+    default:
+      return r.name;
+  }
+}
+
+function sanitizeNumber(n: number, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+export function calculateItemPrice(
+  input: CalculatorInput,
+  language: Language,
+  tierMode: TierMode = 'attained'
+): CalculatedItem | null {
   const service = SERVICE_ITEMS.find((s) => s.id === input.serviceId);
   if (!service) return null;
 
+  // Stored drafts are user-editable JSON; never let NaN / negatives leak into totals.
+  const quantity = sanitizeNumber(input.quantity);
+  const discount = sanitizeNumber(input.discount, { max: 100 });
+  const region = input.region || 'chinese_mainland';
+
   let unitPrice = 0;
   let listPrice = 0;
-  const region = input.region || 'chinese_mainland';
-  const regionInfo = REGIONS.find((r) => r.id === region);
+  let tierLabel: string | undefined;
+  let appliedTierMode: TierMode | undefined;
 
-  if (service.hasRegionalPricing && service.hasTieredPricing) {
-    // Pick the correct pricing matrix based on service id / pricing type.
-    // Traffic services are billed per GB with TB-scaled tier boundaries.
-    // Bandwidth services are billed per Mbps with Mbps-scaled tier boundaries.
-    let pricingData;
-    switch (service.id) {
-      case 'l7_traffic':
-        pricingData = L7_TRAFFIC_PRICING;
-        break;
-      case 'l4_traffic':
-        pricingData = L4_TRAFFIC_PRICING;
-        break;
-      case 'l7_bandwidth':
-        pricingData = L7_BANDWIDTH_PRICING;
-        break;
-      case 'l4_bandwidth':
-        pricingData = L4_BANDWIDTH_PRICING;
-        break;
-      default:
-        // Fallback: if it's any other future regional+tiered service, use L7 traffic
-        // as the safest default so we never blow up rendering.
-        pricingData = service.pricingType === 'bandwidth' ? L7_BANDWIDTH_PRICING : L7_TRAFFIC_PRICING;
-    }
-    listPrice = getTieredPrice(pricingData, region, input.quantity);
-    unitPrice = getDisplayTierPrice(pricingData, region, input.quantity);
+  const tierTable = service.hasRegionalPricing && service.hasTieredPricing ? getTierTableForService(service.id) : undefined;
+  if (tierTable) {
+    const tier = getAttainedTier(tierTable, region, quantity);
+    unitPrice = tier?.pricePerGB ?? 0;
+    tierLabel = tier?.tier;
+    listPrice = getTieredPrice(tierTable, region, quantity, tierMode);
+    appliedTierMode = tierMode;
   } else if (service.basePrice !== undefined) {
-    // Handle flat rate pricing
     unitPrice = service.basePrice;
-    listPrice = unitPrice * input.quantity;
+    listPrice = unitPrice * quantity;
   }
 
-  // Apply discount - discount is the percentage OFF (e.g., 10 means 10% off)
-  const discountMultiplier = 1 - input.discount / 100;
-  const finalPrice = listPrice * discountMultiplier;
-
-  let serviceName = service.name;
-  if (language === 'zh') serviceName = service.nameZh;
-  else if (language === 'kr') serviceName = service.nameKr || service.name;
-  else if (language === 'jp') serviceName = service.nameJp || service.name;
-  else if (language === 'id') serviceName = service.nameId || service.name;
-
-  let unit = service.unit;
-  if (language === 'zh') unit = service.unitZh;
-  else if (language === 'kr') unit = service.unitKr || service.unit;
-  else if (language === 'jp') unit = service.unitJp || service.unit;
-  else if (language === 'id') unit = service.unitId || service.unit;
-
-  let regionName = undefined;
-  if (service.hasRegionalPricing && regionInfo) {
-    regionName = regionInfo.name;
-    if (language === 'zh') regionName = regionInfo.nameZh;
-    else if (language === 'kr') regionName = regionInfo.nameKr || regionInfo.name;
-    else if (language === 'jp') regionName = regionInfo.nameJp || regionInfo.name;
-    else if (language === 'id') regionName = regionInfo.nameId || regionInfo.name;
-  }
+  const finalPrice = listPrice * (1 - discount / 100);
+  const effectiveUnitPrice = quantity > 0 ? listPrice / quantity : unitPrice;
 
   return {
     serviceId: service.id,
-    serviceName,
-    quantity: input.quantity,
-    unit,
+    serviceName: getServiceName(service, language),
+    quantity,
+    unit: getServiceUnit(service, language),
     region: service.hasRegionalPricing ? region : undefined,
-    regionName,
+    regionName: service.hasRegionalPricing ? getRegionName(region, language) : undefined,
     unitPrice,
+    effectiveUnitPrice,
     listPrice,
-    discount: input.discount,
+    discount,
     finalPrice,
     displayUnit: input.displayUnit,
+    tierMode: appliedTierMode,
+    tierLabel,
   };
+}
+
+export function calculateItems(
+  items: CalculatorInput[],
+  language: Language,
+  billingMode: BillingMode = 'auto'
+): CalculatedItem[] {
+  const mode = resolveTierMode(items, billingMode);
+  return items
+    .map((item) => calculateItemPrice(item, language, mode))
+    .filter((item): item is CalculatedItem => item !== null);
 }
 
 export function calculateTotal(items: CalculatedItem[]): { monthly: number; annual: number } {
@@ -105,17 +172,44 @@ export function formatCurrency(amount: number, decimals: number = 2): string {
     currency: 'USD',
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+/** Currency with enough precision for small unit prices ($0.00025, $0.0443…). */
+export function formatUnitPrice(amount: number): string {
+  if (!Number.isFinite(amount)) return formatCurrency(0);
+  if (amount === 0) return formatCurrency(0);
+  if (Math.abs(amount) >= 100) return formatCurrency(amount, 2);
+  const decimals = Math.min(6, Math.max(2, Math.ceil(-Math.log10(Math.abs(amount))) + 3));
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: decimals,
   }).format(amount);
 }
 
 export function formatNumber(num: number): string {
-  return new Intl.NumberFormat('en-US').format(num);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(num);
+}
+
+export function tierModeLabel(mode: TierMode): string {
+  return mode === 'attained' ? 'Attained tier' : 'Progressive tiers';
+}
+
+/** English remark used by the CSV / Excel exports. */
+export function exportRemark(item: CalculatedItem): string {
+  const parts: string[] = [];
+  if (item.regionName) parts.push(`Region: ${item.regionName}`);
+  if (item.tierMode && item.tierLabel) {
+    parts.push(`${tierModeLabel(item.tierMode)} (reached ${item.tierLabel})`);
+  }
+  return parts.join('; ');
 }
 
 // Helper function to escape CSV fields properly
 function escapeCSVField(field: string): string {
-  // If the field contains comma, quote, or newline, wrap in quotes and escape internal quotes
-  if (field.includes(',') || field.includes('"') || field.includes('\n') || field.includes('\r')) {
+  if (/[",\r\n]/.test(field)) {
     return `"${field.replace(/"/g, '""')}"`;
   }
   return field;
@@ -127,7 +221,7 @@ export function exportToCSV(items: CalculatedItem[], totals: { monthly: number; 
     'Billing Item',
     'Unit',
     'Usage/month',
-    'List price (USD) / month',
+    'Unit price (USD)',
     'Total List Price (USD) / month',
     'Discount %',
     'Discounted price (USD) / month',
@@ -135,45 +229,59 @@ export function exportToCSV(items: CalculatedItem[], totals: { monthly: number; 
   ];
 
   const dataRows: string[][] = items.map((item) => {
-    const service = SERVICE_ITEMS.find(s => s.id === item.serviceId);
-    const category = SERVICE_CATEGORIES.find(c => c.id === service?.category);
+    const service = SERVICE_ITEMS.find((s) => s.id === item.serviceId);
+    const category = SERVICE_CATEGORIES.find((c) => c.id === service?.category);
 
-    const displayUnit = item.displayUnit;
-    const multiplier = displayUnit === 'TB' ? 1000 : (displayUnit === 'PB' ? 1000000 : 1);
-    const usage = displayUnit ? item.quantity / multiplier : item.quantity;
-    const unitLabel = displayUnit ? `/${displayUnit}` : item.unit;
+    const multiplier = displayMultiplier(item.displayUnit);
+    const usage = item.quantity / multiplier;
+    const unitLabel = item.displayUnit ? `/${item.displayUnit}` : item.unit;
 
-    // Scale unit price to match the display unit (per GB → per TB/PB when requested).
-    const effectiveUnitPrice = item.unitPrice * multiplier;
+    // Blended unit price so that usage × unit price = list price for every
+    // row, including progressive tiered items.
+    const unitPrice = item.effectiveUnitPrice * multiplier;
 
     return [
       escapeCSVField(category?.name || ''),
       escapeCSVField(item.serviceName),
       escapeCSVField(unitLabel.replace(/^\//, '')),
-      usage.toString(),
-      escapeCSVField(formatCurrency(effectiveUnitPrice, 4)),
+      String(usage),
+      escapeCSVField(formatUnitPrice(unitPrice)),
       escapeCSVField(formatCurrency(item.listPrice)),
       `${item.discount}%`,
       escapeCSVField(formatCurrency(item.finalPrice)),
-      escapeCSVField(item.regionName ? `Region: ${item.regionName}` : ''),
+      escapeCSVField(exportRemark(item)),
     ];
   });
 
-  // Blank separator row — keep column count aligned with header so CSVs open cleanly in Excel/Sheets.
+  // Keep column count aligned with the header so CSVs open cleanly in Excel/Sheets.
   const blankRow: string[] = Array(headers.length).fill('');
-  const monthlyTotalRow: string[] = [...Array(headers.length - 2).fill(''), 'Monthly Total:', escapeCSVField(formatCurrency(totals.monthly))];
-  const annualTotalRow: string[] = [...Array(headers.length - 2).fill(''), 'Annual Total:', escapeCSVField(formatCurrency(totals.annual))];
+  const totalRow = (label: string, value: number) => [
+    ...Array(headers.length - 3).fill(''),
+    label,
+    escapeCSVField(formatCurrency(value)),
+    '',
+  ];
 
-  const allRows: string[][] = [headers, ...dataRows, blankRow, monthlyTotalRow, annualTotalRow];
+  const allRows: string[][] = [
+    headers,
+    ...dataRows,
+    blankRow,
+    totalRow('Monthly Total:', totals.monthly),
+    totalRow('Annual Total:', totals.annual),
+  ];
 
-  // Use CRLF line endings — standard for CSV and interpreted correctly by Excel.
   return allRows.map((row) => row.join(',')).join('\r\n');
 }
 
-export function exportToJSON(items: CalculatedItem[], totals: { monthly: number; annual: number }): string {
+export function exportToJSON(
+  items: CalculatedItem[],
+  totals: { monthly: number; annual: number },
+  meta: Record<string, unknown> = {}
+): string {
   return JSON.stringify(
     {
       exportDate: new Date().toISOString(),
+      ...meta,
       items,
       totals,
     },
@@ -182,10 +290,7 @@ export function exportToJSON(items: CalculatedItem[], totals: { monthly: number;
   );
 }
 
-export function downloadFile(content: string, filename: string, mimeType: string): void {
-  // Prepend a UTF-8 BOM for CSV so Excel opens non-ASCII (CJK) characters correctly.
-  const isCsv = mimeType.startsWith('text/csv');
-  const blob = new Blob(isCsv ? ['\uFEFF', content] : [content], { type: `${mimeType};charset=utf-8` });
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -194,5 +299,13 @@ export function downloadFile(content: string, filename: string, mimeType: string
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoke on the next tick; some browsers cancel the download if revoked synchronously.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export function downloadFile(content: string, filename: string, mimeType: string): void {
+  // Prepend a UTF-8 BOM for CSV so Excel opens non-ASCII (CJK) characters correctly.
+  const isCsv = mimeType.startsWith('text/csv');
+  const blob = new Blob(isCsv ? ['﻿', content] : [content], { type: `${mimeType};charset=utf-8` });
+  downloadBlob(blob, filename);
 }
