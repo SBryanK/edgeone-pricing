@@ -1,5 +1,7 @@
-import { Globe2, Heart } from 'lucide-react';
+import { Globe2, ExternalLink } from 'lucide-react';
 import type { Language } from '../types';
+import { PRICING_AS_OF } from '../data/pricing';
+import { OFFICIAL_DOCS } from '../data/sources';
 
 interface FooterProps {
   language: Language;
@@ -26,19 +28,19 @@ export function Footer({ language }: FooterProps) {
       jp: `© ${year} Tencent EdgeOne 価格計算ツール。All rights reserved.`,
       id: `© ${year} Kalkulator Harga Tencent EdgeOne. Hak cipta dilindungi.`,
     }[language],
-    madeWith: {
-      en: 'Built with',
-      zh: '精心打造',
-      kr: '제작',
-      jp: '制作',
-      id: 'Dibuat dengan',
+    reviewed: {
+      en: `Prices reviewed ${PRICING_AS_OF}`,
+      zh: `价格核对于 ${PRICING_AS_OF}`,
+      kr: `가격 검토일 ${PRICING_AS_OF}`,
+      jp: `料金確認日 ${PRICING_AS_OF}`,
+      id: `Harga ditinjau ${PRICING_AS_OF}`,
     }[language],
-    forTeams: {
-      en: 'for sales & solution architects',
-      zh: '服务销售与解决方案架构师',
-      kr: '영업 및 솔루션 아키텍트를 위해',
-      jp: '営業・ソリューションアーキテクト向け',
-      id: 'untuk tim sales & solution architect',
+    sources: {
+      en: 'Official billing docs',
+      zh: '官方计费文档',
+      kr: '공식 과금 문서',
+      jp: '公式課金ドキュメント',
+      id: 'Dokumen tagihan resmi',
     }[language],
     disclaimer: {
       en: 'Prices are indicative. Contact your account manager for contractual rates.',
@@ -76,11 +78,17 @@ export function Footer({ language }: FooterProps) {
           {t.disclaimer}
         </p>
 
-        {/* Right: built with love */}
-        <div className="flex items-center gap-1 text-gray-500">
-          <span>{t.madeWith}</span>
-          <Heart className="w-3 h-3 text-rose-500 fill-rose-500" aria-hidden="true" />
-          <span>{t.forTeams}</span>
+        {/* Right: price-list review date + official sources */}
+        <div className="flex items-center gap-2 text-gray-500">
+          <span>{t.reviewed}</span>
+          <a
+            href={OFFICIAL_DOCS.billingOverview}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
+          >
+            {t.sources} <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
       </div>
     </footer>

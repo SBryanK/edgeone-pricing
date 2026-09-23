@@ -22,15 +22,21 @@ import {
   CompareView,
   LoginPage,
   Footer,
-  AiAssistant,
+  // AI Assistant is disabled: the static GitHub Pages build has no server to
+  // proxy /api/ai/chat. Re-enable together with the block in App() below when
+  // deploying behind nginx / Vercel (see README → AI Assistant).
+  // AiAssistant,
 } from './components';
-import type { AiRecommendation } from './services/ai';
-import { SERVICE_ITEMS } from './data/pricing';
+// import type { AiRecommendation } from './services/ai';
+// import { SERVICE_ITEMS } from './data/pricing';
 import { useCalculator } from './hooks/useCalculator';
 import type { Draft } from './hooks/useCalculator';
-import type { CalculatedItem, Region, CalculatorInput, Language } from './types';
+import type { CalculatedItem, Region, CalculatorInput, Language, TierMode, DisplayUnit } from './types';
 import { exportToCSV, exportToJSON, downloadFile } from './utils/calculator';
-import { exportToExcel, type DraftExportPayload } from './utils/exportExcel';
+import type { DraftExportPayload } from './utils/exportExcel';
+import type { ExportFormat } from './components/EstimateSlip';
+import { isLoginRequired } from './utils/auth';
+import { PRICING_AS_OF } from './data/pricing';
 
 // Session persistence for the lightweight login gate. `sessionStorage` survives
 // a page refresh but is cleared when the tab closes — appropriate for a
@@ -78,10 +84,12 @@ interface CompareModeLayoutProps {
   language: Language;
   drafts: Draft[];
   initialDraftIds?: string[];
-  addItem: (serviceId: string, quantity: number, region?: Region, discount?: number, displayUnit?: 'GB' | 'TB' | 'PB') => void;
+  tierMode: TierMode;
+  addItem: (serviceId: string, quantity: number, region?: Region, discount?: number, displayUnit?: DisplayUnit) => void;
   mergeDrafts: (sourceDraftId: string, targetDraftId: string) => void;
   getCalculatedItemsForDraft: (draftId: string) => CalculatedItem[];
   getTotalsForDraft: (draftId: string) => { monthly: number; annual: number };
+  getTierModeForDraft: (draftId: string) => TierMode;
   updateItemInDraft: (draftId: string, index: number, updates: Partial<CalculatorInput>) => void;
   removeItemFromDraft: (draftId: string, index: number) => void;
   setGlobalDiscountForDraft: (draftId: string, discount: number) => void;
@@ -93,10 +101,12 @@ function CompareModeLayout({
   language,
   drafts,
   initialDraftIds,
+  tierMode,
   addItem,
   mergeDrafts,
   getCalculatedItemsForDraft,
   getTotalsForDraft,
+  getTierModeForDraft,
   updateItemInDraft,
   removeItemFromDraft,
   setGlobalDiscountForDraft,
@@ -164,7 +174,7 @@ function CompareModeLayout({
         className="overflow-hidden p-4 bg-gray-50 shrink-0"
         style={isCompactCompare ? { width: '100%', height: '40vh' } : { width: catalogWidth }}
       >
-        <ServiceCatalog language={language} onAddItem={addItem} />
+        <ServiceCatalog language={language} onAddItem={addItem} tierMode={tierMode} />
       </div>
 
       {/* Resize Handle */}
@@ -185,6 +195,7 @@ function CompareModeLayout({
           onMergeDrafts={mergeDrafts}
           getCalculatedItemsForDraft={getCalculatedItemsForDraft}
           getTotalsForDraft={getTotalsForDraft}
+          getTierModeForDraft={getTierModeForDraft}
           updateItemInDraft={updateItemInDraft}
           removeItemFromDraft={removeItemFromDraft}
           setGlobalDiscountForDraft={setGlobalDiscountForDraft}
@@ -201,6 +212,7 @@ function App() {
     drafts,
     activeDraftId,
     createDraft,
+    duplicateDraft,
     deleteDraft,
     switchDraft,
     renameDraft,
@@ -208,6 +220,9 @@ function App() {
     calculatedItems,
     totals,
     globalDiscount,
+    billingMode,
+    tierMode,
+    setBillingMode,
     language,
     addItem,
     updateItem,
@@ -221,13 +236,14 @@ function App() {
     mergeDrafts,
     getCalculatedItemsForDraft,
     getTotalsForDraft,
+    getTierModeForDraft,
     updateItemInDraft,
     removeItemFromDraft,
     setGlobalDiscountForDraft,
   } = useCalculator();
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (!isLoginRequired()) return true;
     try {
       return window.sessionStorage.getItem(LOGIN_SESSION_KEY) === '1';
     } catch {
@@ -246,43 +262,44 @@ function App() {
     setIsLoggedIn(true);
   }, []);
 
-  // ---------------------------------------------------------------------
-  // AI Assistant → addItem adapter.
+  // AI Assistant disabled for the static build — see the import note above.
+  // // ---------------------------------------------------------------------
+  // // AI Assistant → addItem adapter.
+  // //
+  // // The assistant emits `AiRecommendation[]` objects; this adapter validates
+  // // each entry against the known service catalogue / region list before
+  // // handing it off to `addItem`. Anything that fails validation is silently
+  // // dropped rather than throwing so a single bad suggestion does not kill
+  // // the whole batch.
+  // // ---------------------------------------------------------------------
+  // const VALID_REGIONS: ReadonlySet<Region> = new Set<Region>([
+  //   'chinese_mainland',
+  //   'north_america',
+  //   'europe',
+  //   'asia_pacific_1',
+  //   'asia_pacific_2',
+  //   'asia_pacific_3',
+  //   'middle_east',
+  //   'africa',
+  //   'south_america',
+  // ]);
+  // const VALID_SERVICE_IDS = new Set(SERVICE_ITEMS.map((s) => s.id));
   //
-  // The assistant emits `AiRecommendation[]` objects; this adapter validates
-  // each entry against the known service catalogue / region list before
-  // handing it off to `addItem`. Anything that fails validation is silently
-  // dropped rather than throwing so a single bad suggestion does not kill
-  // the whole batch.
-  // ---------------------------------------------------------------------
-  const VALID_REGIONS: ReadonlySet<Region> = new Set<Region>([
-    'chinese_mainland',
-    'north_america',
-    'europe',
-    'asia_pacific_1',
-    'asia_pacific_2',
-    'asia_pacific_3',
-    'middle_east',
-    'africa',
-    'south_america',
-  ]);
-  const VALID_SERVICE_IDS = new Set(SERVICE_ITEMS.map((s) => s.id));
-
-  const handleAiAddItems = useCallback((recs: AiRecommendation[]) => {
-    for (const rec of recs) {
-      if (!VALID_SERVICE_IDS.has(rec.serviceId)) continue;
-      const qty = Number(rec.quantity);
-      if (!Number.isFinite(qty) || qty <= 0) continue;
-      const region: Region | undefined =
-        rec.region && VALID_REGIONS.has(rec.region as Region)
-          ? (rec.region as Region)
-          : undefined;
-      addItem(rec.serviceId, qty, region, undefined, rec.displayUnit);
-    }
-  // addItem is stable (useCallback in the hook); eslint would also accept it
-  // here but we intentionally keep the list explicit.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addItem]);
+  // const handleAiAddItems = useCallback((recs: AiRecommendation[]) => {
+  //   for (const rec of recs) {
+  //     if (!VALID_SERVICE_IDS.has(rec.serviceId)) continue;
+  //     const qty = Number(rec.quantity);
+  //     if (!Number.isFinite(qty) || qty <= 0) continue;
+  //     const region: Region | undefined =
+  //       rec.region && VALID_REGIONS.has(rec.region as Region)
+  //         ? (rec.region as Region)
+  //         : undefined;
+  //     addItem(rec.serviceId, qty, region, undefined, rec.displayUnit);
+  //   }
+  // // addItem is stable (useCallback in the hook); eslint would also accept it
+  // // here but we intentionally keep the list explicit.
+  // // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [addItem]);
 
   const [isRegionModalOpen, setIsRegionModalOpen] = useState(false);
   const [isItemsModalOpen, setIsItemsModalOpen] = useState(false);
@@ -297,7 +314,7 @@ function App() {
     serviceId?: string;
     quantity?: number;
     region?: string;
-    displayUnit?: 'GB' | 'TB' | 'PB';
+    displayUnit?: DisplayUnit;
     name?: string;
     index?: number;
     // For move-between-drafts
@@ -315,29 +332,40 @@ function App() {
   }
   const [draggedItem, setDraggedItem] = useState<DraggedItemData | null>(null);
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  // ExcelJS is loaded on demand; surface failures (e.g. the chunk could not be
+  // fetched while offline) instead of failing silently.
+  const runExcelExport = useCallback(async (payloads: DraftExportPayload[], filename: string) => {
+    setIsExporting(true);
+    try {
+      const { exportToExcel } = await import('./utils/exportExcel');
+      await exportToExcel(payloads, filename);
+    } catch (err) {
+      console.error('Excel export failed', err);
+      window.alert('Excel export failed. Please try again, or export as CSV instead.');
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
   const handleExport = useCallback(
-    (format: 'csv' | 'json' | 'excel') => {
+    (format: ExportFormat) => {
       const timestamp = new Date().toISOString().split('T')[0];
+      const activeDraft = drafts.find((d) => d.id === activeDraftId);
+      const draftName = activeDraft?.name || 'Quotation';
+      const slug = draftName.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'quote';
+      const base = `edgeone-pricing-${slug}-${timestamp}`;
       if (format === 'csv') {
-        const content = exportToCSV(calculatedItems, totals);
-        downloadFile(content, `edgeone-pricing-${timestamp}.csv`, 'text/csv');
+        downloadFile(exportToCSV(calculatedItems, totals), `${base}.csv`, 'text/csv');
       } else if (format === 'json') {
-        const content = exportToJSON(calculatedItems, totals);
-        downloadFile(content, `edgeone-pricing-${timestamp}.json`, 'application/json');
+        const content = exportToJSON(calculatedItems, totals, { draftName, tierMode, pricingAsOf: PRICING_AS_OF });
+        downloadFile(content, `${base}.json`, 'application/json');
       } else {
-        // Excel export — match the company template format.
-        // Use the active draft's name so the sheet is recognisable.
-        const activeDraft = drafts.find((d) => d.id === activeDraftId);
-        const payload: DraftExportPayload = {
-          id: activeDraftId,
-          name: activeDraft?.name || 'Quotation',
-          items: calculatedItems,
-          totals,
-        };
-        exportToExcel([payload], `edgeone-pricing-${timestamp}.xlsx`, language);
+        void runExcelExport([{ id: activeDraftId, name: draftName, items: calculatedItems, totals, tierMode }], `${base}.xlsx`);
       }
     },
-    [calculatedItems, totals, drafts, activeDraftId, language]
+    [calculatedItems, totals, drafts, activeDraftId, tierMode, runExcelExport]
   );
 
   // Bulk export for Compare mode — produces a multi-sheet workbook containing
@@ -357,13 +385,26 @@ function App() {
           name: d.name,
           items: getCalculatedItemsForDraft(d.id),
           totals: getTotalsForDraft(d.id),
+          tierMode: getTierModeForDraft(d.id),
         } as DraftExportPayload;
       })
       .filter((p): p is DraftExportPayload => p !== null);
 
     if (payloads.length === 0) return;
-    exportToExcel(payloads, `edgeone-pricing-comparison-${timestamp}.xlsx`, language);
-  }, [drafts, getCalculatedItemsForDraft, getTotalsForDraft, language]);
+    void runExcelExport(payloads, `edgeone-pricing-comparison-${timestamp}.xlsx`);
+  }, [drafts, getCalculatedItemsForDraft, getTotalsForDraft, getTierModeForDraft, runExcelExport]);
+
+  const handleReset = useCallback(() => {
+    if (items.length === 0) return;
+    const msg = {
+      en: `Remove all ${items.length} item(s) from this draft?`,
+      zh: `清空本草稿中的全部 ${items.length} 个项目？`,
+      kr: `이 초안의 항목 ${items.length}개를 모두 삭제할까요?`,
+      jp: `この下書きの ${items.length} 件の項目をすべて削除しますか？`,
+      id: `Hapus semua ${items.length} item dari draf ini?`,
+    }[language];
+    if (window.confirm(msg)) clearAll();
+  }, [items.length, language, clearAll]);
 
   // Resizable Sidebar Logic
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -490,7 +531,7 @@ function App() {
         <Header
           language={language}
           onLanguageChange={setLanguage}
-          onReset={clearAll}
+          onReset={handleReset}
           onOpenRegionModal={() => setIsRegionModalOpen(true)}
           onOpenItemsModal={() => setIsItemsModalOpen(true)}
           onOpenModeModal={() => setIsModeModalOpen(true)}
@@ -521,6 +562,7 @@ function App() {
               drafts={drafts}
               activeDraftId={activeDraftId}
               onCreate={createDraft}
+              onDuplicate={duplicateDraft}
               onDelete={deleteDraft}
               onSwitch={switchDraft}
               onRename={renameDraft}
@@ -558,10 +600,12 @@ function App() {
             language={language}
             drafts={drafts}
             initialDraftIds={compareInitialDrafts}
+            tierMode={tierMode}
             addItem={addItem}
             mergeDrafts={mergeDrafts}
             getCalculatedItemsForDraft={getCalculatedItemsForDraft}
             getTotalsForDraft={getTotalsForDraft}
+            getTierModeForDraft={getTierModeForDraft}
             updateItemInDraft={updateItemInDraft}
             removeItemFromDraft={removeItemFromDraft}
             setGlobalDiscountForDraft={setGlobalDiscountForDraft}
@@ -621,7 +665,7 @@ function App() {
                   activeMobileTab === 'catalog' ? 'block' : 'hidden lg:flex'
                 }`}
               >
-                <ServiceCatalog language={language} onAddItem={addItem} />
+                <ServiceCatalog language={language} onAddItem={addItem} tierMode={tierMode} />
               </main>
 
               {/* Drag Handle (Desktop only) */}
@@ -643,10 +687,14 @@ function App() {
                   calculatedItems={calculatedItems}
                   totals={totals}
                   globalDiscount={globalDiscount}
+                  billingMode={billingMode}
+                  tierMode={tierMode}
+                  onBillingModeChange={setBillingMode}
                   onUpdateItem={updateItem}
                   onRemoveItem={removeItem}
                   onGlobalDiscountChange={setGlobalDiscount}
                   onExport={handleExport}
+                  isExporting={isExporting}
                   onDraftDrop={handleDraftDrop}
                   discountMode={discountMode}
                   onDiscountModeChange={setDiscountMode}
@@ -729,10 +777,9 @@ function App() {
             steals space from the calculator/estimate panes above. */}
         <Footer language={language} />
 
-        {/* Floating AI Assistant trigger \u2014 renders its own modal; does not
-            take layout space when closed. Mounted at the app shell level so
-            it is accessible from both catalog mode and compare mode. */}
+        {/* AI Assistant disabled for the static build (no server-side proxy).
         <AiAssistant language={language} onAddItems={handleAiAddItems} />
+        */}
       </div>
     </DndContext>
   );

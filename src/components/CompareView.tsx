@@ -3,7 +3,7 @@ import { useDraggable } from '@dnd-kit/core';
 import { Plus, X, Columns2, Columns3, GripVertical, Download } from 'lucide-react';
 import { CompareEstimatePane } from './CompareEstimatePane';
 import type { Draft } from '../hooks/useCalculator';
-import type { CalculatedItem, CalculatorInput } from '../types';
+import type { CalculatedItem, CalculatorInput, TierMode } from '../types';
 
 interface CompareViewProps {
   drafts: Draft[];
@@ -13,6 +13,7 @@ interface CompareViewProps {
   onMergeDrafts: (sourceDraftId: string, targetDraftId: string) => void;
   getCalculatedItemsForDraft: (draftId: string) => CalculatedItem[];
   getTotalsForDraft: (draftId: string) => { monthly: number; annual: number };
+  getTierModeForDraft: (draftId: string) => TierMode;
   updateItemInDraft: (draftId: string, index: number, updates: Partial<CalculatorInput>) => void;
   removeItemFromDraft: (draftId: string, index: number) => void;
   setGlobalDiscountForDraft: (draftId: string, discount: number) => void;
@@ -76,6 +77,7 @@ export function CompareView({
   onMergeDrafts,
   getCalculatedItemsForDraft,
   getTotalsForDraft,
+  getTierModeForDraft,
   updateItemInDraft,
   removeItemFromDraft,
   setGlobalDiscountForDraft,
@@ -434,6 +436,7 @@ export function CompareView({
                     draft={draft}
                     calculatedItems={calculatedItems}
                     totals={totals}
+                    tierMode={getTierModeForDraft(draft.id)}
                     language={language}
                     paneIndex={index}
                     allDrafts={drafts}

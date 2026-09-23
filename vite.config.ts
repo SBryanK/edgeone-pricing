@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => {
   loadEnv(mode, process.cwd(), '')
 
   return {
+    // Relative asset URLs: the same build works at a domain root (Vercel,
+    // Docker/nginx) and under a sub-path such as GitHub Pages' /<repo>/.
+    // The app has no client-side router, so './' is safe.
+    base: './',
     plugins: [react(), tailwindcss()],
     test: {
       globals: true,
@@ -20,21 +24,18 @@ export default defineConfig(({ mode }) => {
       include: ['src/**/*.{test,spec}.{ts,tsx}'],
     },
     build: {
-      // Keep the client bundle analyzable; warn at 600 kB (raised from Vite's default 500)
-      // because our pricing table + i18n strings are sizeable but still well within budget.
-      chunkSizeWarningLimit: 600,
+      // ExcelJS (~940 kB) is lazy-loaded on first export, so it lives in its
+      // own async chunk and never blocks first paint.
+      chunkSizeWarningLimit: 1000,
       sourcemap: false,
       rollupOptions: {
         output: {
           // Split large vendor libs so initial bundle stays small and long-term
           // caching works when only app code changes.
           manualChunks: {
-            react: ['react', 'react-dom'],
+            react: ['react', 'react-dom', 'react-dom/client'],
             dnd: ['@dnd-kit/core', '@dnd-kit/sortable'],
             ui: ['@headlessui/react', 'lucide-react'],
-            // SheetJS is ~600 kB minified; split it into its own chunk so the
-            // main app bundle stays small and xlsx is only loaded on first export.
-            xlsx: ['xlsx'],
           },
         },
       },

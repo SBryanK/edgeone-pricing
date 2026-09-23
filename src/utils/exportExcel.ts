@@ -2,29 +2,34 @@
  * Excel (.xlsx) export that mirrors the layout of the company template
  * `EdgeOne Pricing Quotation.xlsx` ("Overseas pricing" sheet).
  *
- * Design goals:
- *   1. Produce a real .xlsx using SheetJS (`xlsx`).
- *   2. Preserve live formulas so the recipient can edit Usage or Discount
- *      in Excel and see totals recompute:
- *        - Total List Price (column G) = F * E
- *        - Discounted price  (column I) = E * F * (1 - H)
- *        - Subtotal row  = SUM(...)
- *        - Grand total   = Subtotal * Contract Duration
- *   3. Apply cell formatting close to the template (currency, percent,
- *      header fills, borders, column widths, merges).
- *   4. When comparing multiple drafts, emit one sheet per draft plus a
- *      side-by-side "Comparison Summary" sheet.
+ *   - Built with ExcelJS, which (unlike the SheetJS community build) actually
+ *     writes cell styles: header fills, borders, number formats, frozen panes.
+ *   - Loaded with a dynamic import so the ~1 MB library is only fetched on
+ *     the first export.
+ *   - Live formulas let the recipient edit Usage or Discount in Excel:
+ *       Total List Price (G) = E * F
+ *       Discounted price (I) = E * F * (1 - H)
+ *       Subtotal = SUM(...), Grand total = Subtotal * Contract Duration
+ *     Column F is the blended unit price (list price / usage), so E * F equals
+ *     the app's list price for every row, including progressive tiered items.
+ *     Each formula carries its computed result so viewers that do not
+ *     recalculate (previewers, Google Drive thumbnails) still show numbers.
+ *   - Comparing several drafts yields one sheet per draft plus a
+ *     "Comparison Summary" sheet.
  */
 
-import * as XLSX from 'xlsx';
-import type { CalculatedItem, Language } from '../types';
-import { SERVICE_ITEMS, SERVICE_CATEGORIES } from '../data/pricing';
+import type { Workbook, Worksheet, Style, Borders } from 'exceljs';
+import type { CalculatedItem, TierMode } from '../types';
+import { SERVICE_ITEMS, SERVICE_CATEGORIES, PRICING_AS_OF } from '../data/pricing';
+import { getPriceSource } from '../data/sources';
+import { displayMultiplier, downloadBlob, exportRemark, tierModeLabel } from './calculator';
 
 export interface DraftExportPayload {
   id: string;
   name: string;
   items: CalculatedItem[];
   totals: { monthly: number; annual: number };
+  tierMode?: TierMode;
   /** Contract duration in months; defaults to 12 to match the template. */
   contractMonths?: number;
 }
@@ -40,9 +45,11 @@ const MODULE_LABEL_BY_SERVICE_ID: Record<string, string> = {
   enterprise_postpaid: 'Acceleration*',
   enterprise_prepaid: 'Acceleration*',
   l7_traffic: 'Acceleration*',
+  l7_bandwidth: 'Acceleration*',
   smart_acceleration: 'Acceleration*',
   http_requests: 'Acceleration*',
   l4_traffic: 'Acceleration',
+  l4_bandwidth: 'Acceleration',
   ddos_essential: 'Security Protection',
   ddos_premium: 'Security Protection',
   ddos_china_extension: 'Security Protection',
@@ -51,12 +58,13 @@ const MODULE_LABEL_BY_SERVICE_ID: Record<string, string> = {
   ddos_global_proxy_hourly: 'Security Protection',
   ddos_china_l4_proxy_hourly: 'Security Protection',
   quic_requests: 'Value Added Services',
-  bot_protection: 'Value Added Services',
+  bot_requests: 'Value Added Services',
   site_quota: 'Value Added Services',
   web_rules_quota: 'Value Added Services',
   china_optimization: 'Acceleration',
   image_processing: 'Media Processing',
   video_processing: 'Media Processing',
+  media_processing: 'Media Processing',
   edge_function_requests: 'Edge Function',
   edge_function_cpu: 'Edge Function',
 };
@@ -69,36 +77,15 @@ function moduleLabelFor(item: CalculatedItem): string {
   return cat?.name || 'Other';
 }
 
-/* ------------------------------------------------------------------ */
-/*  Display-unit helpers                                              */
-/* ------------------------------------------------------------------ */
-
-const UNIT_MULTIPLIERS: Record<'GB' | 'TB' | 'PB', number> = {
-  GB: 1,
-  TB: 1000,
-  PB: 1_000_000,
-};
-
-function effectiveUnitLabel(item: CalculatedItem): string {
+function unitLabel(item: CalculatedItem): string {
   if (item.displayUnit) return `per ${item.displayUnit}`;
   const u = (item.unit || '').replace(/^\//, '').trim();
   if (!u) return '';
-  if (u.toLowerCase().startsWith('per ')) return u;
-  return `per ${u}`;
-}
-
-function effectiveUsage(item: CalculatedItem): number {
-  const mult = item.displayUnit ? UNIT_MULTIPLIERS[item.displayUnit] : 1;
-  return item.quantity / mult;
-}
-
-function effectiveUnitPrice(item: CalculatedItem): number {
-  const mult = item.displayUnit ? UNIT_MULTIPLIERS[item.displayUnit] : 1;
-  return item.unitPrice * mult;
+  return u.toLowerCase().startsWith('per ') ? u : `per ${u}`;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Styling helpers                                                   */
+/*  Styles                                                            */
 /* ------------------------------------------------------------------ */
 
 const COLORS = {
@@ -109,307 +96,295 @@ const COLORS = {
   border: 'FFBFBFBF',
 };
 
-const THIN_BORDER = { style: 'thin', color: { rgb: COLORS.border } };
-const CELL_BORDER = {
-  top: THIN_BORDER,
-  bottom: THIN_BORDER,
-  left: THIN_BORDER,
-  right: THIN_BORDER,
+const THIN = { style: 'thin' as const, color: { argb: COLORS.border } };
+const BORDER: Partial<Borders> = { top: THIN, bottom: THIN, left: THIN, right: THIN };
+
+const HEADER_STYLE: Partial<Style> = {
+  font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerFill } },
+  alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  border: BORDER,
 };
 
-const HEADER_STYLE = {
-  font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11 },
-  fill: { patternType: 'solid', fgColor: { rgb: COLORS.headerFill } },
-  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-  border: CELL_BORDER,
+const DATA_STYLE: Partial<Style> = {
+  font: { size: 10 },
+  alignment: { vertical: 'middle', wrapText: true },
+  border: BORDER,
 };
 
-const TITLE_STYLE = {
-  font: { bold: true, sz: 13 },
-  alignment: { horizontal: 'left', vertical: 'center' },
+const TOTAL_STYLE: Partial<Style> = {
+  font: { bold: true, size: 11 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.totalFill } },
+  alignment: { horizontal: 'right', vertical: 'middle' },
+  border: BORDER,
 };
 
-const DATA_STYLE_BASE = {
-  alignment: { vertical: 'center', wrapText: true },
-  border: CELL_BORDER,
-  font: { sz: 10 },
+const GRAND_STYLE: Partial<Style> = {
+  font: { bold: true, size: 12, color: { argb: 'FF1F4E78' } },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.grandTotalFill } },
+  alignment: { horizontal: 'right', vertical: 'middle' },
+  border: BORDER,
 };
 
-const CURRENCY_FMT = '"$"#,##0.0000';
-const CURRENCY_TOTAL_FMT = '"$"#,##0.00';
-const PERCENT_FMT = '0%';
+const UNIT_PRICE_FMT = '"$"#,##0.00####';
+const CURRENCY_FMT = '"$"#,##0.00';
+const PERCENT_FMT = '0.##%';
+const QTY_FMT = '#,##0.####';
 const INTEGER_FMT = '#,##0';
 
-type Cell = XLSX.CellObject;
-
-function txt(v: string, style?: object): Cell {
-  return { t: 's', v, s: { ...DATA_STYLE_BASE, ...(style || {}) } } as Cell;
-}
-function num(v: number, fmt?: string, style?: object): Cell {
-  return {
-    t: 'n',
-    v,
-    z: fmt,
-    s: { ...DATA_STYLE_BASE, numFmt: fmt, ...(style || {}) },
-  } as Cell;
-}
-function formula(f: string, fmt?: string, style?: object): Cell {
-  return {
-    t: 'n',
-    f,
-    z: fmt,
-    s: { ...DATA_STYLE_BASE, numFmt: fmt, ...(style || {}) },
-  } as Cell;
-}
-
 /* ------------------------------------------------------------------ */
-/*  Worksheet builder                                                 */
+/*  Worksheet builders                                                */
 /* ------------------------------------------------------------------ */
 
-function buildWorksheetForDraft(
-  draft: DraftExportPayload,
-  opts: { sheetTitle: string; updatedDate: string }
-): XLSX.WorkSheet {
-  const ws: XLSX.WorkSheet = {};
+const HEADERS = [
+  'S/N',
+  'Module',
+  'Billing Item',
+  'Unit',
+  'Usage/month',
+  'Unit price (USD)',
+  'Total List Price (USD) / month',
+  'Discount %',
+  'Discounted price (USD) / month',
+  'Remark',
+  'Price source',
+];
+
+function buildDraftSheet(ws: Worksheet, draft: DraftExportPayload, updatedDate: string): void {
   const contractMonths = draft.contractMonths ?? 12;
 
-  ws['!cols'] = [
-    { wch: 7 },   // A  S/N
-    { wch: 18 },  // B  Module
-    { wch: 60 },  // C  Billing Item
-    { wch: 18 },  // D  Unit
-    { wch: 18 },  // E  Usage/month
-    { wch: 18 },  // F  List price (USD) / month
-    { wch: 18 },  // G  Total list price
-    { wch: 12 },  // H  Discount %
-    { wch: 18 },  // I  Discounted price
-    { wch: 28 },  // J  Remark
-    { wch: 18 },  // K  EO SA highest discount
+  ws.columns = [
+    { width: 6 },
+    { width: 20 },
+    { width: 52 },
+    { width: 18 },
+    { width: 14 },
+    { width: 16 },
+    { width: 18 },
+    { width: 11 },
+    { width: 18 },
+    { width: 40 },
+    { width: 24 },
   ];
 
-  ws['C2'] = { t: 's', v: 'Billing Mode: Monthly', s: TITLE_STYLE } as Cell;
-  ws['J2'] = { t: 's', v: 'Version', s: { font: { bold: true }, alignment: { horizontal: 'right' } } } as Cell;
-  ws['K2'] = { t: 'n', v: 2, s: { alignment: { horizontal: 'left' } } } as Cell;
+  ws.mergeCells('C2:I2');
+  ws.getCell('C2').value = `Billing Mode: Monthly${draft.tierMode ? ` — tiered traffic: ${tierModeLabel(draft.tierMode)}` : ''}`;
+  ws.getCell('C2').font = { bold: true, size: 13 };
+  ws.getCell('J2').value = 'Price list as of';
+  ws.getCell('K2').value = PRICING_AS_OF;
+  ws.getCell('J3').value = 'Updated Date:';
+  ws.getCell('K3').value = updatedDate;
+  for (const ref of ['J2', 'J3']) {
+    ws.getCell(ref).font = { bold: true };
+    ws.getCell(ref).alignment = { horizontal: 'right' };
+  }
 
-  ws['J3'] = { t: 's', v: 'Updated Date:', s: { font: { bold: true }, alignment: { horizontal: 'right' } } } as Cell;
-  ws['K3'] = { t: 's', v: opts.updatedDate, s: { alignment: { horizontal: 'left' } } } as Cell;
-
-  const HEADERS = [
-    'S/N',
-    'Module',
-    'Billing Item',
-    'Unit',
-    'Usage/month',
-    'List price (USD) / month',
-    'Total List Price (USD) / month',
-    'Discount %',
-    'Discounted price (USD) / month',
-    'Remark',
-    'EO SA highest discount',
-  ];
+  const headerRow = ws.getRow(4);
   HEADERS.forEach((h, i) => {
-    const col = XLSX.utils.encode_col(i);
-    ws[`${col}4`] = { t: 's', v: h, s: HEADER_STYLE } as Cell;
+    const cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.style = HEADER_STYLE;
   });
+  headerRow.height = 30;
 
   const firstDataRow = 5;
   const items = draft.items;
-  const lastDataRow = firstDataRow + Math.max(items.length - 1, 0);
 
   items.forEach((item, idx) => {
     const r = firstDataRow + idx;
-    const usage = effectiveUsage(item);
-    const unitPrice = effectiveUnitPrice(item);
+    const mult = displayMultiplier(item.displayUnit);
+    const usage = item.quantity / mult;
+    const unitPrice = item.effectiveUnitPrice * mult;
     const discountRate = item.discount / 100;
+    const source = getPriceSource(item.serviceId);
 
-    ws[`A${r}`] = num(idx + 1, INTEGER_FMT, { alignment: { horizontal: 'center' } });
-    ws[`B${r}`] = txt(moduleLabelFor(item));
-    ws[`C${r}`] = txt(item.serviceName);
-    ws[`D${r}`] = txt(effectiveUnitLabel(item));
-    ws[`E${r}`] = num(usage, INTEGER_FMT);
-    ws[`F${r}`] = num(unitPrice, CURRENCY_FMT);
-    ws[`G${r}`] = formula(`F${r}*E${r}`, CURRENCY_TOTAL_FMT);
-    ws[`H${r}`] = num(discountRate, PERCENT_FMT, { alignment: { horizontal: 'center' } });
-    ws[`I${r}`] = formula(`E${r}*(F${r}*(1-H${r}))`, CURRENCY_TOTAL_FMT);
-    ws[`J${r}`] = txt(item.regionName ? `Region: ${item.regionName}` : '');
-    ws[`K${r}`] = num(discountRate, PERCENT_FMT, { alignment: { horizontal: 'center' } });
+    const row = ws.getRow(r);
+    row.values = [
+      idx + 1,
+      moduleLabelFor(item),
+      item.serviceName,
+      unitLabel(item),
+      usage,
+      unitPrice,
+      { formula: `E${r}*F${r}`, result: item.listPrice },
+      discountRate,
+      { formula: `E${r}*F${r}*(1-H${r})`, result: item.finalPrice },
+      exportRemark(item),
+      source.status === 'verified' ? 'Official docs' : 'Reference — confirm',
+    ];
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.style = { ...DATA_STYLE };
+    });
+    row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell(5).numFmt = QTY_FMT;
+    row.getCell(6).numFmt = UNIT_PRICE_FMT;
+    row.getCell(7).numFmt = CURRENCY_FMT;
+    row.getCell(8).numFmt = PERCENT_FMT;
+    row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell(9).numFmt = CURRENCY_FMT;
+    row.getCell(11).value = { text: row.getCell(11).value as string, hyperlink: source.url };
+    row.getCell(11).font = { size: 10, color: { argb: 'FF0563C1' }, underline: true };
   });
 
+  const lastDataRow = firstDataRow + Math.max(items.length, 1) - 1;
   if (items.length === 0) {
-    const r = firstDataRow;
+    const row = ws.getRow(firstDataRow);
     HEADERS.forEach((_, i) => {
-      const col = XLSX.utils.encode_col(i);
-      ws[`${col}${r}`] = txt('', {});
+      row.getCell(i + 1).style = { ...DATA_STYLE };
     });
-    ws[`G${r}`] = num(0, CURRENCY_TOTAL_FMT);
-    ws[`I${r}`] = num(0, CURRENCY_TOTAL_FMT);
+    row.getCell(3).value = 'No items';
   }
 
   const noteRow = lastDataRow + 1;
-  ws[`B${noteRow}`] = {
-    t: 's',
-    v: '* indicates mandatory',
-    s: { font: { italic: true, sz: 9, color: { rgb: 'FF808080' } } },
-  } as Cell;
+  ws.getCell(`B${noteRow}`).value = '* indicates mandatory';
+  ws.getCell(`B${noteRow}`).font = { italic: true, size: 9, color: { argb: 'FF808080' } };
 
   const subtotalRow = noteRow + 1;
   const contractRow = subtotalRow + 1;
-  const grandtotalRow = contractRow + 1;
+  const grandRow = contractRow + 1;
+  const listSubtotal = items.reduce((s, i) => s + i.listPrice, 0);
 
-  const totalRowStyle = {
-    font: { bold: true, sz: 11 },
-    fill: { patternType: 'solid', fgColor: { rgb: COLORS.totalFill } },
-    border: CELL_BORDER,
-    alignment: { horizontal: 'right', vertical: 'center' },
-  };
-  const grandRowStyle = {
-    font: { bold: true, sz: 12, color: { rgb: 'FF1F4E78' } },
-    fill: { patternType: 'solid', fgColor: { rgb: COLORS.grandTotalFill } },
-    border: CELL_BORDER,
-    alignment: { horizontal: 'right', vertical: 'center' },
+  const setTotal = (ref: string, value: ExcelValue, style: Partial<Style>, fmt?: string) => {
+    const cell = ws.getCell(ref);
+    cell.value = value;
+    cell.style = { ...style, ...(fmt ? { numFmt: fmt } : {}) };
   };
 
-  ws[`C${subtotalRow}`] = { t: 's', v: 'Subtotal (Before GST)', s: totalRowStyle } as Cell;
-  ws[`G${subtotalRow}`] = formula(`SUM(G${firstDataRow}:G${lastDataRow})`, CURRENCY_TOTAL_FMT, totalRowStyle);
-  ws[`I${subtotalRow}`] = formula(`SUM(I${firstDataRow}:I${lastDataRow})`, CURRENCY_TOTAL_FMT, totalRowStyle);
+  setTotal(`C${subtotalRow}`, 'Subtotal (Before GST)', TOTAL_STYLE);
+  setTotal(`G${subtotalRow}`, { formula: `SUM(G${firstDataRow}:G${lastDataRow})`, result: listSubtotal }, TOTAL_STYLE, CURRENCY_FMT);
+  setTotal(`I${subtotalRow}`, { formula: `SUM(I${firstDataRow}:I${lastDataRow})`, result: draft.totals.monthly }, TOTAL_STYLE, CURRENCY_FMT);
 
-  ws[`C${contractRow}`] = { t: 's', v: 'Contract Duration (Month)', s: totalRowStyle } as Cell;
-  ws[`G${contractRow}`] = num(contractMonths, INTEGER_FMT, totalRowStyle);
-  ws[`I${contractRow}`] = num(contractMonths, INTEGER_FMT, totalRowStyle);
+  setTotal(`C${contractRow}`, 'Contract Duration (Month)', TOTAL_STYLE);
+  setTotal(`G${contractRow}`, contractMonths, TOTAL_STYLE, INTEGER_FMT);
+  setTotal(`I${contractRow}`, contractMonths, TOTAL_STYLE, INTEGER_FMT);
 
-  ws[`C${grandtotalRow}`] = { t: 's', v: 'Grandtotal (Annual/USD)', s: grandRowStyle } as Cell;
-  ws[`G${grandtotalRow}`] = formula(`G${subtotalRow}*G${contractRow}`, CURRENCY_TOTAL_FMT, grandRowStyle);
-  ws[`I${grandtotalRow}`] = formula(`I${subtotalRow}*I${contractRow}`, CURRENCY_TOTAL_FMT, grandRowStyle);
+  setTotal(`C${grandRow}`, 'Grandtotal (USD)', GRAND_STYLE);
+  setTotal(`G${grandRow}`, { formula: `G${subtotalRow}*G${contractRow}`, result: listSubtotal * contractMonths }, GRAND_STYLE, CURRENCY_FMT);
+  setTotal(`I${grandRow}`, { formula: `I${subtotalRow}*I${contractRow}`, result: draft.totals.monthly * contractMonths }, GRAND_STYLE, CURRENCY_FMT);
 
-  ws['!ref'] = `A1:K${grandtotalRow}`;
-  ws['!merges'] = [
-    { s: { r: 1, c: 2 }, e: { r: 1, c: 8 } },
-  ];
-  // Freeze header row on open
-  ws['!views'] = [{ state: 'frozen', ySplit: 4 }];
+  const disclaimerRow = grandRow + 2;
+  ws.mergeCells(`B${disclaimerRow}:K${disclaimerRow}`);
+  ws.getCell(`B${disclaimerRow}`).value =
+    `Indicative list prices (reviewed ${PRICING_AS_OF}) from Tencent Cloud EdgeOne public documentation. ` +
+    'Items marked "Reference — confirm" were not re-verified. Not an official quotation.';
+  ws.getCell(`B${disclaimerRow}`).font = { italic: true, size: 9, color: { argb: 'FF808080' } };
+  ws.getCell(`B${disclaimerRow}`).alignment = { wrapText: true };
+  ws.getRow(disclaimerRow).height = 28;
 
-  void opts.sheetTitle;
-  return ws;
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
 }
 
-/* ------------------------------------------------------------------ */
-/*  Summary (comparison) sheet                                        */
-/* ------------------------------------------------------------------ */
+type ExcelValue = string | number | { formula: string; result: number };
 
-function buildComparisonSummarySheet(drafts: DraftExportPayload[]): XLSX.WorkSheet {
-  const ws: XLSX.WorkSheet = {};
+function buildComparisonSheet(ws: Worksheet, drafts: DraftExportPayload[]): void {
+  ws.columns = [{ width: 36 }, ...drafts.map(() => ({ width: 22 }))];
+  const lastCol = drafts.length + 1;
 
-  ws['!cols'] = [
-    { wch: 42 },
-    ...drafts.map(() => ({ wch: 22 })),
-  ];
+  ws.mergeCells(1, 1, 1, lastCol);
+  ws.getCell('A1').value = 'Comparison Summary';
+  ws.getCell('A1').font = { bold: true, size: 14 };
 
-  ws['A1'] = { t: 's', v: 'Comparison Summary', s: { font: { bold: true, sz: 14 } } } as Cell;
-  ws['A3'] = { t: 's', v: 'Metric', s: HEADER_STYLE } as Cell;
+  const header = ws.getRow(3);
+  header.getCell(1).value = 'Metric';
   drafts.forEach((d, i) => {
-    const col = XLSX.utils.encode_col(i + 1);
-    ws[`${col}3`] = { t: 's', v: d.name, s: HEADER_STYLE } as Cell;
+    header.getCell(i + 2).value = d.name;
+  });
+  header.eachCell((c) => {
+    c.style = HEADER_STYLE;
   });
 
-  const rows: Array<{ label: string; values: Array<number>; fmt: string }> = [
-    { label: 'Line Items (count)', values: drafts.map((d) => d.items.length), fmt: INTEGER_FMT },
-    { label: 'Monthly Total (USD)', values: drafts.map((d) => d.totals.monthly), fmt: CURRENCY_TOTAL_FMT },
-    { label: 'Annual Total (USD)', values: drafts.map((d) => d.totals.annual), fmt: CURRENCY_TOTAL_FMT },
+  const rows: Array<{ label: string; values: Array<number | string>; fmt?: string }> = [
+    { label: 'Line items (count)', values: drafts.map((d) => d.items.length), fmt: INTEGER_FMT },
+    { label: 'Tiered traffic pricing', values: drafts.map((d) => (d.tierMode ? tierModeLabel(d.tierMode) : '—')) },
+    { label: 'Monthly total (USD)', values: drafts.map((d) => d.totals.monthly), fmt: CURRENCY_FMT },
+    { label: 'Annual total (USD)', values: drafts.map((d) => d.totals.annual), fmt: CURRENCY_FMT },
     {
-      label: 'Avg. Discount Applied',
+      label: 'Weighted discount',
       values: drafts.map((d) => {
-        if (d.items.length === 0) return 0;
-        const avg = d.items.reduce((sum, it) => sum + it.discount, 0) / d.items.length;
-        return avg / 100;
+        const list = d.items.reduce((s, it) => s + it.listPrice, 0);
+        return list > 0 ? 1 - d.totals.monthly / list : 0;
       }),
       fmt: PERCENT_FMT,
     },
   ];
 
   rows.forEach((row, idx) => {
-    const r = idx + 4;
-    ws[`A${r}`] = txt(row.label, { font: { bold: true } });
+    const r = ws.getRow(idx + 4);
+    r.getCell(1).value = row.label;
+    r.getCell(1).style = { ...DATA_STYLE, font: { bold: true, size: 10 } };
     row.values.forEach((v, i) => {
-      const col = XLSX.utils.encode_col(i + 1);
-      ws[`${col}${r}`] = num(v, row.fmt, { alignment: { horizontal: 'right' } });
+      const cell = r.getCell(i + 2);
+      cell.value = v;
+      cell.style = { ...DATA_STYLE, alignment: { horizontal: 'right', vertical: 'middle' }, ...(row.fmt ? { numFmt: row.fmt } : {}) };
     });
   });
 
-  const deltaRow = rows.length + 5;
-  ws[`A${deltaRow}`] = txt('Delta vs. Cheapest (Annual)', {
-    font: { bold: true },
-    fill: { patternType: 'solid', fgColor: { rgb: COLORS.subHeaderFill } },
-  });
+  const deltaRow = ws.getRow(rows.length + 5);
+  deltaRow.getCell(1).value = 'Delta vs. cheapest (annual)';
+  deltaRow.getCell(1).style = {
+    ...DATA_STYLE,
+    font: { bold: true, size: 10 },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subHeaderFill } },
+  };
   const minAnnual = Math.min(...drafts.map((d) => d.totals.annual || 0));
   drafts.forEach((d, i) => {
-    const col = XLSX.utils.encode_col(i + 1);
     const delta = (d.totals.annual || 0) - minAnnual;
-    ws[`${col}${deltaRow}`] = num(delta, CURRENCY_TOTAL_FMT, {
-      alignment: { horizontal: 'right' },
-      fill: {
-        patternType: 'solid',
-        fgColor: { rgb: delta === 0 ? 'FFD7EDDA' : 'FFF8D7DA' },
-      },
-      font: { bold: true, color: { rgb: delta === 0 ? 'FF0A6637' : 'FF8B0000' } },
-    });
+    const cell = deltaRow.getCell(i + 2);
+    cell.value = delta;
+    cell.style = {
+      ...DATA_STYLE,
+      numFmt: CURRENCY_FMT,
+      alignment: { horizontal: 'right', vertical: 'middle' },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: delta === 0 ? 'FFD7EDDA' : 'FFF8D7DA' } },
+      font: { bold: true, size: 10, color: { argb: delta === 0 ? 'FF0A6637' : 'FF8B0000' } },
+    };
   });
-
-  const lastCol = XLSX.utils.encode_col(drafts.length);
-  ws['!ref'] = `A1:${lastCol}${deltaRow}`;
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: drafts.length } }];
-  return ws;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Public API                                                        */
-/* ------------------------------------------------------------------ */
-
-/**
- * Build and trigger a browser download of the .xlsx workbook.
- *   - Single draft  : one sheet mirroring "Overseas pricing"
- *   - Multiple drafts: one sheet per draft + "Comparison Summary" sheet
- */
-export function exportToExcel(
-  drafts: DraftExportPayload[],
-  filename: string,
-  _language?: Language
-): void {
-  if (drafts.length === 0) {
-    drafts = [{ id: 'empty', name: 'Draft', items: [], totals: { monthly: 0, annual: 0 } }];
-  }
-
-  const wb = XLSX.utils.book_new();
-  const updatedDate = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const isComparison = drafts.length > 1;
-  if (isComparison) {
-    const summary = buildComparisonSummarySheet(drafts);
-    XLSX.utils.book_append_sheet(wb, summary, 'Comparison Summary');
-  }
-
-  const usedNames = new Set<string>();
-  drafts.forEach((d, i) => {
-    const baseName = sanitizeSheetName(d.name || `Draft ${i + 1}`);
-    let name = baseName;
-    let suffix = 1;
-    while (usedNames.has(name)) {
-      const tail = ` (${++suffix})`;
-      name = `${baseName.slice(0, 31 - tail.length)}${tail}`;
-    }
-    usedNames.add(name);
-
-    const ws = buildWorksheetForDraft(d, { sheetTitle: name, updatedDate });
-    XLSX.utils.book_append_sheet(wb, ws, name);
-  });
-
-  XLSX.writeFile(wb, filename, { bookType: 'xlsx', cellStyles: true });
 }
 
 /** Excel sheet-name rules: <=31 chars, no `\ / ? * [ ] :` */
-function sanitizeSheetName(name: string): string {
+export function sanitizeSheetName(name: string): string {
   return name.replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Sheet';
+}
+
+export async function buildWorkbook(drafts: DraftExportPayload[]): Promise<Workbook> {
+  const { default: ExcelJS } = await import('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'EdgeOne Pricing Calculator';
+  wb.created = new Date();
+
+  const list = drafts.length > 0 ? drafts : [{ id: 'empty', name: 'Draft', items: [], totals: { monthly: 0, annual: 0 } }];
+  const updatedDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  if (list.length > 1) {
+    buildComparisonSheet(wb.addWorksheet('Comparison Summary'), list);
+  }
+
+  const usedNames = new Set<string>(list.length > 1 ? ['Comparison Summary'] : []);
+  list.forEach((d, i) => {
+    const baseName = sanitizeSheetName(d.name || `Draft ${i + 1}`);
+    let name = baseName;
+    let suffix = 1;
+    while (usedNames.has(name.toLowerCase()) || usedNames.has(name)) {
+      const tail = ` (${++suffix})`;
+      name = `${baseName.slice(0, 31 - tail.length)}${tail}`;
+    }
+    usedNames.add(name.toLowerCase());
+    buildDraftSheet(wb.addWorksheet(name), d, updatedDate);
+  });
+
+  return wb;
+}
+
+/**
+ * Build and trigger a browser download of the .xlsx workbook.
+ *   - Single draft   : one sheet mirroring "Overseas pricing"
+ *   - Multiple drafts: "Comparison Summary" + one sheet per draft
+ */
+export async function exportToExcel(drafts: DraftExportPayload[], filename: string): Promise<void> {
+  const wb = await buildWorkbook(drafts);
+  const buffer = await wb.xlsx.writeBuffer();
+  downloadBlob(
+    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    filename
+  );
 }

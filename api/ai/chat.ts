@@ -108,7 +108,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           resolve();
         });
         upstreamRes.on('error', (err) => {
-          // eslint-disable-next-line no-console
           console.error('[ai] upstream stream error:', err.message);
           if (!res.headersSent) {
             sendJson(res, 502, {
@@ -126,7 +125,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       upstream.destroy(new Error('upstream timeout'));
     });
     upstream.on('error', (err) => {
-      // eslint-disable-next-line no-console
       console.error('[ai] upstream error:', err.message);
       if (!res.headersSent) {
         sendJson(res, 502, {

@@ -34,8 +34,21 @@ export interface RegionInfo {
   descriptionId: string;
 }
 
+/**
+ * How a tiered (traffic / bandwidth) line item is rated for the month:
+ *  - 'attained'    — the whole monthly volume is billed at the unit price of
+ *                    the tier it reaches (EdgeOne Enterprise, postpaid monthly).
+ *  - 'progressive' — each slice of volume is billed at its own tier's price
+ *                    (EdgeOne Enterprise prepaid, Personal / Basic / Standard).
+ */
+export type TierMode = 'attained' | 'progressive';
+
+/** Per-draft choice; 'auto' derives the tier mode from the plan in the draft. */
+export type BillingMode = 'auto' | TierMode;
+
 export interface TieredPrice {
-  tier: TrafficTier;
+  // Traffic tiers use TrafficTier labels; bandwidth tiers use Mbps labels.
+  tier: TrafficTier | string;
   minGB: number;
   maxGB: number;
   pricePerGB: number;
@@ -96,6 +109,8 @@ export interface CalculatorInput {
   displayUnit?: 'GB' | 'TB' | 'PB';
 }
 
+export type DisplayUnit = 'GB' | 'TB' | 'PB';
+
 export interface CalculatedItem {
   serviceId: string;
   serviceName: string;
@@ -103,11 +118,18 @@ export interface CalculatedItem {
   unit: string;
   region?: Region;
   regionName?: string;
+  /** Marginal unit price (for tiered items: price of the tier reached). */
   unitPrice: number;
+  /** Blended unit price = listPrice / quantity. Equals unitPrice for flat items. */
+  effectiveUnitPrice: number;
   listPrice: number;
   discount: number;
   finalPrice: number;
   displayUnit?: 'GB' | 'TB' | 'PB';
+  /** Set only for tiered items. */
+  tierMode?: TierMode;
+  /** Label of the tier reached, e.g. "10-50TB". Set only for tiered items. */
+  tierLabel?: string;
 }
 
 export interface CalculatorState {
